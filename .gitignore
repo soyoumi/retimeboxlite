@@ -23,3 +23,6 @@ gradle/wrapper/gradle-wrapper.jar
 # 日志、系统垃圾文件
 *.log
 .DS_Store
+
+#`local.properties`保存**你本机电脑 SDK 路径**
+local.properties
