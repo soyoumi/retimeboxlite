@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RE时光匣子 lite</string>
+
+    <!-- 底部 Tab -->
+    <string name="tab_home">主页</string>
+    <string name="tab_album">相册</string>
+    <string name="tab_video">视频</string>
+    <string name="tab_space">空间</string>
+    <string name="tab_settings">设置</string>
+
+    <!-- 主页子视图 -->
+    <string name="view_entry">条目</string>
+    <string name="view_calendar">日历</string>
+    <string name="view_directory">目录</string>
+
+    <!-- 条目视图 -->
+    <string name="today">今日</string>
+    <string name="yesterday">昨日</string>
+    <string name="no_records">暂无记录</string>
+    <string name="prev_day">上一天</string>
+    <string name="next_day">下一天</string>
+
+    <!-- 日历视图 -->
+    <string name="no_record_on_day">该日期无记录</string>
+
+    <!-- 目录视图 -->
+    <string name="new_record">新建笔记</string>
+    <string name="no_folder_hint">暂无文件夹，点击新建</string>
+    <string name="root_folder">根目录</string>
+
+    <!-- 搜索 -->
+    <string name="search_hint">搜索笔记…</string>
+    <string name="search_results">搜索结果：%d 条</string>
+    <string name="no_search_results">没有找到匹配的笔记</string>
+    <string name="clear_search">清除搜索</string>
+
+    <!-- 笔记详情/编辑 -->
+    <string name="record_detail">记录详情</string>
+    <string name="record_edit">编辑笔记</string>
+    <string name="new_record_title">新建笔记</string>
+    <string name="title_hint">标题</string>
+    <string name="content_hint">开始记录…</string>
+    <string name="save">保存</string>
+    <string name="delete">删除</string>
+    <string name="cancel">取消</string>
+    <string name="confirm_delete">确定删除？</string>
+    <string name="confirm_delete_message">此操作不可恢复</string>
+
+    <!-- 编辑器工具栏 -->
+    <string name="insert_image">插入图片</string>
+    <string name="insert_video">插入视频</string>
+    <string name="insert_voice">插入语音</string>
+    <string name="insert_space_link">插入空间链接</string>
+    <string name="select_folder">选择文件夹</string>
+
+    <!-- 空间链接 -->
+    <string name="space_link_type">类型</string>
+    <string name="space_link_type_panorama_image">全景图片</string>
+    <string name="space_link_type_panorama_video">全景视频</string>
+    <string name="space_link_type_gsplat">高斯泼溅</string>
+    <string name="space_link_web_url">网页链接</string>
+    <string name="space_link_name">名称</string>
+    <string name="space_link_thumbnail">缩略图URL（可选）</string>
+    <string name="open_in_webview">打开</string>
+    <string name="webview_load_error">加载失败</string>
+    <string name="retry">重试</string>
+
+    <!-- 相册/视频 -->
+    <string name="batch_mode">批量选择</string>
+    <string name="exit_batch_mode">退出</string>
+    <string name="selected_count">已选择 %d 项</string>
+    <string name="batch_delete">删除</string>
+    <string name="batch_move_folder">移动</string>
+    <string name="index_item_disabled">索引条目不可批量操作</string>
+    <string name="no_images">暂无图片</string>
+    <string name="no_videos">暂无视频</string>
+    <string name="add_image">添加图片</string>
+    <string name="add_video">添加视频</string>
+
+    <!-- 设置 -->
+    <string name="general_settings">通用设置</string>
+    <string name="folder_management">目录管理</string>
+
+    <!-- 文件夹管理 -->
+    <string name="new_folder">新建文件夹</string>
+    <string name="rename_folder">重命名</string>
+    <string name="folder_name">文件夹名称</string>
+    <string name="folder_color">主题色</string>
+    <string name="delete_folder_warning">删除文件夹将递归删除其子文件夹及相关条目，笔记将仅移除该文件夹关联。</string>
+    <string name="confirm_delete_folder">确定删除该文件夹？</string>
+    <string name="root_cannot_delete">根目录不可删除</string>
+    <string name="cycle_reference_error">循环引用：不能将文件夹移动到自身或其子文件夹下</string>
+
+    <!-- 权限 -->
+    <string name="permission_denied">权限被拒绝，无法访问媒体文件</string>
+    <string name="request_media_permission">需要媒体读取权限以选择文件</string>
+
+    <!-- 根目录限制 -->
+    <string name="root_dir_prohibit_create">禁止在根目录下创建笔记，请先选择或创建一个文件夹</string>
+    <string name="root_dir_prohibit_add_media">禁止在根目录下添加内容，请先进入或创建一个文件夹</string>
+    <string name="folder_required">笔记必须至少关联一个文件夹，请选择文件夹</string>
+    <string name="no_folders_for_selection">笔记必须要存储在文件夹位置，您还没有创建任何文件夹，请在设置页面中目录管理那里进行文件夹的新建以及相关操作！</string>
+
+    <!-- 通用 -->
+    <string name="ok">确定</string>
+    <string name="error_unknown">未知错误</string>
+    <string name="loading">加载中…</string>
+    <string name="back">返回</string>
+
+    <!-- 备份/还原 -->
+    <string name="backup">备份</string>
+    <string name="restore">还原</string>
+    <string name="backup_confirm_title">备份前说明</string>
+    <string name="backup_confirm_message">如果您经常添加的图片一般是几百KB之类的，视频也很少，视频几十MB之类的，可以用备份，但如果你经常添加图片为几十MB或更大体积图片、视频添加的不少，比如大小几百MB或更高的，不建议使用备份，因为文件总体积比较大，太费时间比较麻烦，建议结合应用“MT管理器”打开 /storage/emulated/0/Android/data/com.retimebox.lite/retimeboxlitefiles/ 目录下进行备份文件操作。\n\n备份的文件容易被转换用到其它地方，可以被其它软件等使用，可脱离本应用，因此可以灵活迁移，需要写一个转换工具，您可以在电脑上使用龙虾这种AI工具帮你转换，向它说明你要做什么转换，转换一下md文件里的格式内容，转换md文件里的文件路径，转换成其它文件格式，如果要迁移到其它地方使用，完全用不着数据库文件，数据库文件可以删除，备份文件已经包括了所有数据，建议务必保存备份包。\n\n备份操作会将所有数据打包进行备份处理。\n\n您确定要执行备份操作吗？</string>
+    <string name="backup_in_progress">正在备份中…</string>
+    <string name="restore_in_progress">正在还原中…</string>
+    <string name="backup_success">备份成功</string>
+    <string name="restore_success">还原成功，应用即将重启…</string>
+    <string name="backup_failed">备份失败</string>
+    <string name="restore_failed">还原失败</string>
+    <string name="backup_no_permission">该路径无权限保存，请更改为公共目录下保存备份文件</string>
+    <string name="backup_processing">备份或还原操作正在进行，请稍候</string>
+    <string name="backup_cancel">取消</string>
+    <string name="confirm_restore_title">确认还原</string>
+    <string name="confirm_restore_message">还原操作将覆盖当前所有数据，此操作不可恢复。\n\n您确定要执行还原操作吗？</string>
+</resources>
