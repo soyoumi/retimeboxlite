@@ -1,3 +1,25 @@
+# 编译输出
 app/build/
 build/
+.gradle/
+.kotlin/
+
+# IDE配置
+.idea/
+.vscode/
+*.iml
+
+# 本地备份文件夹
+backup/
+
+# 二进制安装包
 *.apk
+*.ap_
+*.aab
+
+# gradle：只忽略jar，保留properties
+gradle/wrapper/gradle-wrapper.jar
+
+# 日志、系统垃圾文件
+*.log
+.DS_Store
