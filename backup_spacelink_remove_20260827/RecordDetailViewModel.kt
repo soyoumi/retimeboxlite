@@ -9,10 +9,12 @@ import com.retimebox.lite.data.local.entity.MediaItem
 import com.retimebox.lite.data.local.entity.Record
 import com.retimebox.lite.data.local.entity.RefType
 import com.retimebox.lite.data.local.entity.SpaceFileItem
+import com.retimebox.lite.data.local.entity.SpaceLinkItem
 import com.retimebox.lite.data.repository.FolderRepository
 import com.retimebox.lite.data.repository.MediaRepository
 import com.retimebox.lite.data.repository.RecordRepository
 import com.retimebox.lite.data.repository.SpaceFileRepository
+import com.retimebox.lite.data.repository.SpaceLinkRepository
 import com.retimebox.lite.util.FileHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,6 +29,7 @@ class RecordDetailViewModel(application: Application) : AndroidViewModel(applica
     private val app = application as RetimeboxApplication
     private val recordRepository: RecordRepository = app.recordRepository
     private val mediaRepository: MediaRepository = app.mediaRepository
+    private val spaceLinkRepository: SpaceLinkRepository = app.spaceLinkRepository
     private val spaceFileRepository: SpaceFileRepository = app.spaceFileRepository
     private val folderRepository: FolderRepository = app.folderRepository
 
@@ -39,6 +42,9 @@ class RecordDetailViewModel(application: Application) : AndroidViewModel(applica
 
     private val _mediaItems = MutableStateFlow<List<MediaItem>>(emptyList())
     val mediaItems: StateFlow<List<MediaItem>> = _mediaItems.asStateFlow()
+
+    private val _spaceLinks = MutableStateFlow<List<SpaceLinkItem>>(emptyList())
+    val spaceLinks: StateFlow<List<SpaceLinkItem>> = _spaceLinks.asStateFlow()
 
     private val _spaceFiles = MutableStateFlow<List<SpaceFileItem>>(emptyList())
     val spaceFiles: StateFlow<List<SpaceFileItem>> = _spaceFiles.asStateFlow()
@@ -72,6 +78,9 @@ class RecordDetailViewModel(application: Application) : AndroidViewModel(applica
             it.refType == RefType.VIDEO ||
             it.refType == RefType.VOICE
         }
+        val spaceRefs = record.contentReferenceIds.filter {
+            it.refType == RefType.SPACE_LINK
+        }
         val spaceFileRefs = record.contentReferenceIds.filter {
             it.refType == RefType.SPACE_FILE
         }
@@ -81,6 +90,12 @@ class RecordDetailViewModel(application: Application) : AndroidViewModel(applica
             mediaRepository.findById(ref.targetId)?.let { mediaItems.add(it) }
         }
         _mediaItems.value = mediaItems
+
+        val spaceLinks = mutableListOf<SpaceLinkItem>()
+        for (ref in spaceRefs) {
+            spaceLinkRepository.findById(ref.targetId)?.let { spaceLinks.add(it) }
+        }
+        _spaceLinks.value = spaceLinks
 
         val spaceFiles = mutableListOf<SpaceFileItem>()
         for (ref in spaceFileRefs) {

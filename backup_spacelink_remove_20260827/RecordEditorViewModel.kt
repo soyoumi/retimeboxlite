@@ -12,12 +12,14 @@ import com.retimebox.lite.data.local.entity.MediaType
 import com.retimebox.lite.data.local.entity.Record
 import com.retimebox.lite.data.local.entity.RefType
 import com.retimebox.lite.data.local.entity.SpaceFileItem
+import com.retimebox.lite.data.local.entity.SpaceLinkItem
 import com.retimebox.lite.data.local.entity.SpaceType
 import com.retimebox.lite.data.local.entity.SourceType
 import com.retimebox.lite.data.repository.FolderRepository
 import com.retimebox.lite.data.repository.MediaRepository
 import com.retimebox.lite.data.repository.RecordRepository
 import com.retimebox.lite.data.repository.SpaceFileRepository
+import com.retimebox.lite.data.repository.SpaceLinkRepository
 import com.retimebox.lite.util.FileHelper
 import com.retimebox.lite.util.RichEditorHelper
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +35,7 @@ class RecordEditorViewModel(application: Application) : AndroidViewModel(applica
     private val recordRepository: RecordRepository = app.recordRepository
     private val folderRepository: FolderRepository = app.folderRepository
     private val mediaRepository: MediaRepository = app.mediaRepository
+    private val spaceLinkRepository: SpaceLinkRepository = app.spaceLinkRepository
     private val spaceFileRepository: SpaceFileRepository = app.spaceFileRepository
 
     private val _editingRecordId = MutableStateFlow<Long?>(null)
@@ -58,6 +61,9 @@ class RecordEditorViewModel(application: Application) : AndroidViewModel(applica
 
     private val _referencedMedia = MutableStateFlow<List<MediaItem>>(emptyList())
     val referencedMedia: StateFlow<List<MediaItem>> = _referencedMedia.asStateFlow()
+
+    private val _referencedSpaceLinks = MutableStateFlow<List<SpaceLinkItem>>(emptyList())
+    val referencedSpaceLinks: StateFlow<List<SpaceLinkItem>> = _referencedSpaceLinks.asStateFlow()
 
     private val _referencedSpaceFiles = MutableStateFlow<List<SpaceFileItem>>(emptyList())
     val referencedSpaceFiles: StateFlow<List<SpaceFileItem>> = _referencedSpaceFiles.asStateFlow()
@@ -90,6 +96,9 @@ class RecordEditorViewModel(application: Application) : AndroidViewModel(applica
                 val mediaRefs = record.contentReferenceIds.filter {
                     it.refType == RefType.IMAGE || it.refType == RefType.VIDEO || it.refType == RefType.VOICE
                 }
+                val spaceRefs = record.contentReferenceIds.filter {
+                    it.refType == RefType.SPACE_LINK
+                }
                 val spaceFileRefs = record.contentReferenceIds.filter {
                     it.refType == RefType.SPACE_FILE
                 }
@@ -99,6 +108,12 @@ class RecordEditorViewModel(application: Application) : AndroidViewModel(applica
                     mediaRepository.findById(ref.targetId)?.let { mediaItems.add(it) }
                 }
                 _referencedMedia.value = mediaItems
+
+                val spaceItems = mutableListOf<SpaceLinkItem>()
+                for (ref in spaceRefs) {
+                    spaceLinkRepository.findById(ref.targetId)?.let { spaceItems.add(it) }
+                }
+                _referencedSpaceLinks.value = spaceItems
 
                 val spaceFileItems = mutableListOf<SpaceFileItem>()
                 for (ref in spaceFileRefs) {
@@ -120,6 +135,7 @@ class RecordEditorViewModel(application: Application) : AndroidViewModel(applica
         }
         _contentReferences.value = emptyList()
         _referencedMedia.value = emptyList()
+        _referencedSpaceLinks.value = emptyList()
         _referencedSpaceFiles.value = emptyList()
         _saved.value = false
         _error.value = null
@@ -195,6 +211,28 @@ class RecordEditorViewModel(application: Application) : AndroidViewModel(applica
         return mediaItem.id
     }
 
+    suspend fun addSpaceLinkReference(
+        spaceType: SpaceType,
+        webUrl: String,
+        name: String,
+        thumbnailUrl: String?,
+        folderId: Long?
+    ): Long {
+        val targetFolderId = folderId ?: _primaryFolderId.value ?: 0L
+        val spaceItem = spaceLinkRepository.insertForEditor(
+            context = getApplication(),
+            spaceType = spaceType,
+            webUrl = webUrl,
+            name = name,
+            thumbnailUrl = thumbnailUrl,
+            folderId = targetFolderId
+        )
+        val ref = ContentReference(refType = RefType.SPACE_LINK, targetId = spaceItem.id)
+        _contentReferences.value = _contentReferences.value + ref
+        _referencedSpaceLinks.value = _referencedSpaceLinks.value + spaceItem
+        return spaceItem.id
+    }
+
     suspend fun addSpaceFileReference(
         spaceType: SpaceType,
         filePath: String,
@@ -213,8 +251,31 @@ class RecordEditorViewModel(application: Application) : AndroidViewModel(applica
         val ref = ContentReference(refType = RefType.SPACE_FILE, targetId = spaceFileItem.id)
         _contentReferences.value = _contentReferences.value + ref
         _referencedSpaceFiles.value = _referencedSpaceFiles.value + spaceFileItem
-        FileHelper.saveSpaceFileMd(getApplication(), spaceFileItem)
         return spaceFileItem.id
+    }
+
+    suspend fun updateSpaceLinkReference(
+        id: Long,
+        spaceType: SpaceType,
+        webUrl: String,
+        name: String,
+        thumbnailUrl: String?
+    ) {
+        val existing = spaceLinkRepository.findById(id) ?: return
+        val updated = existing.copy(
+            spaceType = spaceType,
+            webUrl = webUrl,
+            name = name,
+            thumbnailUrl = thumbnailUrl
+        )
+        spaceLinkRepository.update(updated)
+        _referencedSpaceLinks.value = _referencedSpaceLinks.value.map {
+            if (it.id == id) updated else it
+        }
+        val newMd = RichEditorHelper.updateSpaceLinkShortcode(
+            _contentMarkdown.value, id, spaceType, webUrl, name, thumbnailUrl
+        )
+        _contentMarkdown.value = newMd
     }
 
     suspend fun updateSpaceFileReference(
@@ -235,7 +296,6 @@ class RecordEditorViewModel(application: Application) : AndroidViewModel(applica
         _referencedSpaceFiles.value = _referencedSpaceFiles.value.map {
             if (it.id == id) updated else it
         }
-        FileHelper.saveSpaceFileMd(getApplication(), updated)
     }
 
     fun removeReference(targetId: Long, refType: RefType) {
@@ -249,6 +309,12 @@ class RecordEditorViewModel(application: Application) : AndroidViewModel(applica
                     mediaRepository.deleteById(targetId)
                 }
             }
+            RefType.SPACE_LINK -> {
+                _referencedSpaceLinks.value = _referencedSpaceLinks.value.filter { it.id != targetId }
+                viewModelScope.launch {
+                    spaceLinkRepository.deleteById(targetId, getApplication())
+                }
+            }
             RefType.SPACE_FILE -> {
                 _referencedSpaceFiles.value = _referencedSpaceFiles.value.filter { it.id != targetId }
                 viewModelScope.launch {
@@ -256,15 +322,11 @@ class RecordEditorViewModel(application: Application) : AndroidViewModel(applica
                     if (item != null) {
                         if (item.sourceType == SourceType.DIRECT_ADD) {
                             spaceFileRepository.deleteByIdWithFile(getApplication(), targetId)
-                            FileHelper.deleteSpaceFileMd(getApplication(), targetId, item.createTime)
                         } else {
                             spaceFileRepository.deleteById(targetId)
                         }
                     }
                 }
-            }
-            RefType.SPACE_LINK -> {
-                // 兼容性占位：旧空间链接类型已从编辑器功能移除
             }
         }
     }
@@ -336,35 +398,26 @@ class RecordEditorViewModel(application: Application) : AndroidViewModel(applica
 
     private suspend fun syncSpaceFileNamesFromShortcodes(context: android.content.Context) {
         val md = _contentMarkdown.value
-        val regex = Regex("""\[spacefile\]\[(\d+)\]\[([^\]]*)\]\[([^\]]*)\]\[([^\]]*)\]""")
+        val regex = Regex("""\[spacefile\]\[(\d+)\]\[[^\]]*\]\[([^\]]*)\]\[([^\]]*)\]""")
         for (match in regex.findAll(md)) {
             val id = match.groupValues[1].toLongOrNull() ?: continue
-            val typeStr = match.groupValues[2]
-            val name = match.groupValues[3]
-            val thumbnail = match.groupValues[4].ifBlank { null }
+            val name = match.groupValues[2]
+            val thumbnail = match.groupValues[3].ifBlank { null }
             val item = spaceFileRepository.findById(id) ?: continue
-
-            val spaceType = when (typeStr) {
-                "panorama_image" -> SpaceType.PANORAMA_IMAGE
-                "panorama_video" -> SpaceType.PANORAMA_VIDEO
-                "gsplat" -> SpaceType.GSPLAT
-                else -> item.spaceType
-            }
-
-            if (item.name != name || item.thumbnailUrl != thumbnail || item.spaceType != spaceType) {
-                spaceFileRepository.updateByFilePath(item.filePath, spaceType, name, thumbnail)
+            if (item.name != name || item.thumbnailUrl != thumbnail) {
+                spaceFileRepository.updateNameAndThumbnailByFilePath(item.filePath, name, thumbnail)
                 if (item.sourceType == SourceType.DIRECT_ADD) {
                     val year = java.text.SimpleDateFormat("yyyy", java.util.Locale.getDefault())
                         .format(java.util.Date(item.createTime))
                     val mdRelativePath = "spfile/$year/${item.id}.md"
                     val mdFile = FileHelper.getFileFromRelativePath(context, mdRelativePath)
                     if (mdFile.exists()) {
-                        val typeLabel = when (spaceType) {
+                        val typeStr = when (item.spaceType) {
                             SpaceType.PANORAMA_IMAGE -> "全景图片"
                             SpaceType.PANORAMA_VIDEO -> "全景视频"
                             SpaceType.GSPLAT -> "高斯泼溅"
                         }
-                        mdFile.writeText("$typeLabel\n$name\n${item.filePath}\n${thumbnail ?: ""}")
+                        mdFile.writeText("$typeStr\n$name\n${item.filePath}\n${thumbnail ?: ""}")
                     }
                 }
             }

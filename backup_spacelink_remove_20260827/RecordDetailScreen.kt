@@ -62,6 +62,7 @@ import coil.compose.AsyncImage
 import com.retimebox.lite.R
 import com.retimebox.lite.data.local.entity.MediaItem
 import com.retimebox.lite.data.local.entity.SpaceFileItem
+import com.retimebox.lite.data.local.entity.SpaceLinkItem
 import com.retimebox.lite.ui.components.VideoThumbnail
 import com.retimebox.lite.util.FileHelper
 import com.retimebox.lite.viewmodel.RecordDetailViewModel
@@ -78,12 +79,14 @@ fun RecordDetailScreen(
     onDeleted: () -> Unit,
     onOpenImage: (Long) -> Unit = {},
     onOpenVideo: (Long) -> Unit = {},
+    onOpenSpaceLink: (Long) -> Unit = {},
     onOpenSpaceFile: (Long) -> Unit = {},
     viewModel: RecordDetailViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val record by viewModel.record.collectAsStateWithLifecycle()
     val mediaItems by viewModel.mediaItems.collectAsStateWithLifecycle()
+    val spaceLinks by viewModel.spaceLinks.collectAsStateWithLifecycle()
     val spaceFiles by viewModel.spaceFiles.collectAsStateWithLifecycle()
     val relatedFolders by viewModel.relatedFolders.collectAsStateWithLifecycle()
     val primaryFolder by viewModel.primaryFolder.collectAsStateWithLifecycle()
@@ -117,13 +120,7 @@ fun RecordDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        text = record?.title ?: stringResource(R.string.record_detail),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
+                title = { Text(record?.title ?: stringResource(R.string.record_detail)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
@@ -183,10 +180,12 @@ fun RecordDetailScreen(
             RenderContent(
                 markdown = currentRecord.contentMarkdown,
                 mediaItems = mediaItems,
+                spaceLinks = spaceLinks,
                 spaceFiles = spaceFiles,
                 context = context,
                 onOpenImage = onOpenImage,
                 onOpenVideo = onOpenVideo,
+                onOpenSpaceLink = onOpenSpaceLink,
                 onOpenSpaceFile = onOpenSpaceFile
             )
         }
@@ -219,10 +218,12 @@ fun RecordDetailScreen(
 private fun RenderContent(
     markdown: String,
     mediaItems: List<MediaItem>,
+    spaceLinks: List<SpaceLinkItem>,
     spaceFiles: List<SpaceFileItem>,
     context: android.content.Context,
     onOpenImage: (Long) -> Unit,
     onOpenVideo: (Long) -> Unit,
+    onOpenSpaceLink: (Long) -> Unit,
     onOpenSpaceFile: (Long) -> Unit
 ) {
     val lines = markdown.split("\n")
@@ -260,6 +261,17 @@ private fun RenderContent(
                     val media = id?.let { targetId -> mediaItems.find { it.id == targetId } }
                     if (media != null) {
                         VoiceCard(media = media, context = context)
+                    }
+                }
+                line.startsWith("[spacelink][") -> {
+                    val idMatch = Regex("""\[spacelink]\[(\d+)]""").find(line)
+                    val id = idMatch?.groupValues?.get(1)?.toLongOrNull()
+                    val link = id?.let { targetId -> spaceLinks.find { it.id == targetId } }
+                    if (link != null) {
+                        SpaceLinkCard(
+                            link = link,
+                            onClick = { onOpenSpaceLink(id) }
+                        )
                     }
                 }
                 line.startsWith("[spacefile][") -> {
@@ -449,6 +461,101 @@ private fun VoiceCard(media: MediaItem, context: android.content.Context) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpaceLinkCard(
+    link: SpaceLinkItem,
+    onClick: () -> Unit = {}
+) {
+    val context = LocalContext.current
+    val typeLabel = when (link.spaceType) {
+        com.retimebox.lite.data.local.entity.SpaceType.PANORAMA_IMAGE -> "全景图片"
+        com.retimebox.lite.data.local.entity.SpaceType.PANORAMA_VIDEO -> "全景视频"
+        com.retimebox.lite.data.local.entity.SpaceType.GSPLAT -> "高斯泼溅"
+    }
+
+    val bgColor = when (link.spaceType) {
+        com.retimebox.lite.data.local.entity.SpaceType.PANORAMA_IMAGE -> Color(0xFF6897BB)
+        com.retimebox.lite.data.local.entity.SpaceType.PANORAMA_VIDEO -> Color(0xFF808080)
+        com.retimebox.lite.data.local.entity.SpaceType.GSPLAT -> Color(0xFF6A8759)
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(150.dp)
+            ) {
+                if (link.thumbnailUrl != null && link.thumbnailUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = FileHelper.getFileFromRelativePath(context, link.thumbnailUrl),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(bgColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = when (link.spaceType) {
+                                com.retimebox.lite.data.local.entity.SpaceType.PANORAMA_IMAGE -> Icons.Filled.Image
+                                com.retimebox.lite.data.local.entity.SpaceType.PANORAMA_VIDEO -> Icons.Filled.Movie
+                                com.retimebox.lite.data.local.entity.SpaceType.GSPLAT -> Icons.Filled.Public
+                            },
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .background(
+                            color = Color(0xFF1565C0),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = typeLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = link.name.ifEmpty { link.webUrl },
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }

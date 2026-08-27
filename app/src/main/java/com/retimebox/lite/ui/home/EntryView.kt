@@ -47,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.retimebox.lite.R
 import com.retimebox.lite.data.local.entity.Record
+import com.retimebox.lite.util.RichEditorHelper
 import com.retimebox.lite.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -216,10 +217,9 @@ fun RecordItem(
                 Spacer(modifier = Modifier.height(4.dp))
             }
             Text(
-                text = record.contentMarkdown
-                    .replace(Regex("<br\\s*/?>"), " ")
+                text = RichEditorHelper.stripShortcodesForSummary(record.contentMarkdown)
                     .take(100)
-                    .ifEmpty { "（空笔记）" },
+                    .ifEmpty { "空笔记" },
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,

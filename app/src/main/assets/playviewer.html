@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>空间文件播放器 v3</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+        #container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+        #info {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff; font-family: sans-serif; font-size: 16px;
+            text-align: center; pointer-events: none; z-index: 10;
+        }
+        #loading {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff; font-family: sans-serif; font-size: 18px;
+            text-align: center; z-index: 10;
+        }
+        #error {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff6b6b; font-family: sans-serif; font-size: 16px;
+            text-align: center; z-index: 10; max-width: 80%;
+        }
+        canvas { display: block; width: 100%; height: 100%; }
+        #controls {
+            position: fixed; bottom: 20px; left: 50%;
+            transform: translateX(-50%);
+            color: #fff; font-family: sans-serif; font-size: 12px;
+            background: rgba(0,0,0,0.5); padding: 8px 16px;
+            border-radius: 20px; z-index: 10; display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="loading">加载中...</div>
+        <div id="error" style="display:none;"></div>
+        <div id="controls"></div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "./three.module.js"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from './OrbitControls.js';
+
+        let scene, camera, renderer, controlsObj;
+        let currentObject = null;
+        let videoElement = null;
+
+        const loading = document.getElementById('loading');
+        const errorDiv = document.getElementById('error');
+        const controls = document.getElementById('controls');
+
+        function getQueryParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                type: params.get('type'),
+                url: params.get('url')
+            };
+        }
+
+        const { type, url } = getQueryParams();
+
+        function showError(msg) {
+            loading.style.display = 'none';
+            errorDiv.textContent = msg;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideLoading() {
+            loading.style.display = 'none';
+        }
+
+        if (!type || !url) {
+            showError('缺少参数');
+        } else {
+            init();
+        }
+
+        async function init() {
+            try {
+                const container = document.getElementById('container');
+
+                scene = new THREE.Scene();
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+                camera.position.set(0, 0, 0.01);
+
+                renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                renderer.setClearColor(0x000000);
+                container.appendChild(renderer.domElement);
+
+                controlsObj = new OrbitControls(camera, renderer.domElement);
+                controlsObj.enableDamping = true;
+                controlsObj.dampingFactor = 0.05;
+                controlsObj.rotateSpeed = -1.0;
+                controlsObj.zoomEnabled = type !== 'PANORAMA_IMAGE' && type !== 'PANORAMA_VIDEO';
+                controlsObj.zoomSpeed = 0.5;
+                controlsObj.enablePan = false;
+                controlsObj.minDistance = 0.5;
+                controlsObj.maxDistance = 100;
+
+                window.addEventListener('resize', onWindowResize);
+
+                await loadContent(type, url);
+                hideLoading();
+                animate();
+
+            } catch (e) {
+                showError('初始化失败: ' + e.message);
+            }
+        }
+
+        async function loadContent(contentType, fileUrl) {
+            try {
+                if (contentType === 'PANORAMA_IMAGE') {
+                    await loadPanoramaImage(fileUrl);
+                } else if (contentType === 'PANORAMA_VIDEO') {
+                    await loadPanoramaVideo(fileUrl);
+                } else {
+                    showError('未知的文件类型: ' + contentType);
+                }
+            } catch (e) {
+                showError('加载失败: ' + e.message);
+            }
+        }
+
+        async function loadPanoramaImage(fileUrl) {
+            loading.textContent = '加载全景图片中...';
+
+            const textureLoader = new THREE.TextureLoader();
+            const texture = await new Promise((resolve, reject) => {
+                textureLoader.load(fileUrl, resolve, undefined, reject);
+            });
+            texture.colorSpace = THREE.SRGBColorSpace;
+
+            const geometry = new THREE.SphereGeometry(500, 60, 40);
+            geometry.scale(-1, 1, 1);
+
+            const material = new THREE.MeshBasicMaterial({ map: texture });
+            const mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
+            currentObject = mesh;
+
+            controlsObj.zoomEnabled = false;
+            controlsObj.target.set(0, 0, 0);
+            camera.position.set(0, 0.01, 0);
+
+            showControls('全景图片 - 拖拽旋转视角');
+        }
+
+        async function loadPanoramaVideo(fileUrl) {
+            loading.textContent = '加载全景视频中...';
+
+            videoElement = document.createElement('video');
+            videoElement.crossOrigin = 'anonymous';
+            videoElement.loop = true;
+            videoElement.muted = true;
+            videoElement.playsInline = true;
+            videoElement.setAttribute('webkit-playsinline', '');
+            videoElement.style.display = 'none';
+            document.body.appendChild(videoElement);
+
+            return new Promise((resolve, reject) => {
+                videoElement.onloadeddata = async () => {
+                    try {
+                        await videoElement.play();
+
+                        const texture = new THREE.VideoTexture(videoElement);
+                        texture.colorSpace = THREE.SRGBColorSpace;
+                        texture.minFilter = THREE.LinearFilter;
+                        texture.magFilter = THREE.LinearFilter;
+
+                        const geometry = new THREE.SphereGeometry(500, 60, 40);
+                        geometry.scale(-1, 1, 1);
+
+                        const material = new THREE.MeshBasicMaterial({ map: texture });
+                        const mesh = new THREE.Mesh(geometry, material);
+                        scene.add(mesh);
+                        currentObject = mesh;
+
+                        controlsObj.zoomEnabled = false;
+                        controlsObj.target.set(0, 0, 0);
+                        camera.position.set(0, 0.01, 0);
+
+                        showControls('全景视频 - 拖拽旋转视角');
+                        resolve();
+                    } catch (e) {
+                        reject(e);
+                    }
+                };
+                videoElement.onerror = () => reject(new Error('视频加载失败'));
+                videoElement.src = fileUrl;
+            });
+        }
+
+        function showControls(text) {
+            controls.textContent = text;
+            controls.style.display = 'block';
+            clearTimeout(window._controlsTimeout);
+            window._controlsTimeout = setTimeout(() => {
+                controls.style.display = 'none';
+            }, 15000);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (controlsObj) {
+                controlsObj.update();
+            }
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+        }
+
+        window.addEventListener('error', (e) => {
+            console.error('JS Error:', e.message);
+        });
+    </script>
+</body>
+</html>

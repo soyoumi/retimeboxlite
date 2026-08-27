@@ -13,8 +13,8 @@ android {
         applicationId = "com.retimebox.lite"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.2.0"
     }
 
     buildTypes {
@@ -93,6 +93,9 @@ dependencies {
 
     // 腾讯 TBS X5 浏览器引擎（WebGL2 / 硬件加速 / 全景内容支持）
     implementation("com.tencent.tbs:tbssdk:44286")
+
+    // NanoHTTPD 本地微型 HTTP 服务器
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     // Gson (JSON serialization for List fields in Room)
     implementation("com.google.code.gson:gson:2.11.0")

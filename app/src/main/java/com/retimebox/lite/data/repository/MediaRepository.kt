@@ -32,6 +32,15 @@ class MediaRepository(
 
     suspend fun findById(id: Long): MediaItem? = mediaItemDao.findById(id)
 
+    suspend fun findByIds(ids: List<Long>): List<MediaItem> = mediaItemDao.getByIds(ids)
+
+    suspend fun findDirectAddByPath(filePath: String, mediaType: MediaType): MediaItem? =
+        mediaItemDao.findDirectAddByPath(filePath, mediaType)
+
+    suspend fun deleteIndexItem(id: Long) {
+        mediaItemDao.deleteById(id)
+    }
+
     /**
      * 新增 DIRECT_ADD 媒体条目
      */

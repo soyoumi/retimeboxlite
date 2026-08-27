@@ -1,9 +1,11 @@
 package com.retimebox.lite.ui.video
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.defaultMinSize
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import com.retimebox.lite.ui.components.VideoThumbnail
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -48,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,6 +86,8 @@ fun VideoScreen(
     val scope = rememberCoroutineScope()
     val currentFolderId by viewModel.currentFolderId.collectAsStateWithLifecycle()
     val batchMode by viewModel.batchMode.collectAsStateWithLifecycle()
+    val forceDeleteMode by viewModel.forceDeleteMode.collectAsStateWithLifecycle()
+    val forceDeleteEvent by viewModel.forceDeleteEvent.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
     val videosInFolder by viewModel.videosInFolder.collectAsStateWithLifecycle()
     val rootFolders by viewModel.rootFolders.collectAsStateWithLifecycle()
@@ -89,6 +95,15 @@ fun VideoScreen(
     var showFolderTree by remember { mutableStateOf(false) }
     var showFolderPickerDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(forceDeleteEvent) {
+        forceDeleteEvent?.let {
+            scope.launch {
+                snackbarHostState.showSnackbar(it)
+            }
+            viewModel.consumeForceDeleteEvent()
+        }
+    }
 
     val videoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -158,19 +173,45 @@ fun VideoScreen(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Row {
-                        TextButton(onClick = { viewModel.clearSelection() }) {
+                        TextButton(
+                            onClick = { viewModel.clearSelection() },
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
                             Text(stringResource(R.string.cancel))
                         }
-                        TextButton(onClick = { showFolderPickerDialog = true }) {
+                        TextButton(
+                            onClick = { showFolderPickerDialog = true },
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
                             Text(stringResource(R.string.batch_move_folder))
                         }
-                        TextButton(onClick = { viewModel.batchDelete() }) {
+                        TextButton(
+                            onClick = { viewModel.toggleForceDeleteMode() },
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
+                            Text(
+                                text = "强删",
+                                color = if (forceDeleteMode) Color.Red else Color.DarkGray
+                            )
+                        }
+                        TextButton(
+                            onClick = { viewModel.batchDelete() },
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
                             Text(
                                 text = stringResource(R.string.batch_delete),
                                 color = MaterialTheme.colorScheme.error
                             )
                         }
-                        TextButton(onClick = { viewModel.exitBatchMode() }) {
+                        TextButton(
+                            onClick = { viewModel.exitBatchMode() },
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
                             Text(stringResource(R.string.exit_batch_mode))
                         }
                     }
@@ -305,6 +346,7 @@ fun VideoScreen(
                             item = video,
                             isSelected = selectedIds.contains(video.id),
                             batchMode = batchMode,
+                            forceDeleteMode = forceDeleteMode,
                             onClick = {
                                 if (batchMode) {
                                     viewModel.toggleSelection(video.id, video.sourceType)
@@ -347,10 +389,12 @@ private fun VideoGridItem(
     item: MediaItem,
     isSelected: Boolean,
     batchMode: Boolean,
+    forceDeleteMode: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {}
 ) {
     val isIndexItem = item.sourceType == SourceType.FROM_RECORD_INDEX
+    val indexSelectable = isIndexItem && forceDeleteMode
     val context = LocalContext.current
     val file = FileHelper.getFileFromRelativePath(context, item.fileRelativePath)
 
@@ -358,21 +402,18 @@ private fun VideoGridItem(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                enabled = !batchMode || !isIndexItem,
+                enabled = !batchMode || !isIndexItem || indexSelectable,
                 onClick = onClick,
                 onLongClick = onLongClick
             )
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             if (file.exists()) {
-                // 视频缩略图：Coil VideoFrameDecoder 抽帧
-                AsyncImage(
-                    model = Uri.fromFile(file),
-                    contentDescription = null,
+                VideoThumbnail(
+                    videoFile = file,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(120.dp),
-                    contentScale = ContentScale.Crop
+                        .height(120.dp)
                 )
             } else {
                 Box(
@@ -415,13 +456,13 @@ private fun VideoGridItem(
                 }
             }
 
-            if (isSelected) {
+            if (isSelected && (batchMode || forceDeleteMode)) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(Alignment.BottomEnd)
                         .padding(4.dp)
                         .background(
-                            color = MaterialTheme.colorScheme.primary,
+                            color = if (forceDeleteMode) Color.Red else MaterialTheme.colorScheme.primary,
                             shape = RoundedCornerShape(50)
                         )
                         .padding(2.dp)
@@ -437,7 +478,7 @@ private fun VideoGridItem(
                 }
             }
 
-            if (isIndexItem && batchMode) {
+            if (isIndexItem && batchMode && !forceDeleteMode) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

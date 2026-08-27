@@ -13,7 +13,7 @@ import com.retimebox.lite.data.local.entity.SpaceType
  * - 图片：[image][id][fileRelativePath][fileName]
  * - 视频：[video][id][fileRelativePath][fileName]
  * - 语音：[voice][id][fileRelativePath][fileName]
- * - 空间文件：[spacefile][id][type][name][thumbnailUrl]
+ * - 空间链接：[spacelink][id][type][webUrl][name][thumbnailUrl]
  *
  * 第一个中括号 = 类型，第二个中括号 = ID，之后的中括号 = 必要信息
  */
@@ -22,9 +22,10 @@ object RichEditorHelper {
     private val IMAGE_PATTERN = Regex("""\[image]\[(\d+)\]\[([^\]]*)\]\[([^\]]*)\]""")
     private val VIDEO_PATTERN = Regex("""\[video]\[(\d+)\]\[([^\]]*)\]\[([^\]]*)\]""")
     private val VOICE_PATTERN = Regex("""\[voice]\[(\d+)\]\[([^\]]*)\]\[([^\]]*)\]""")
+    private val SPACE_LINK_PATTERN = Regex("""\[spacelink]\[(\d+)\]\[([^\]]*)\]\[([^\]]*)\]\[([^\]]*)\]\[([^\]]*)\]""")
     private val SPACE_FILE_PATTERN = Regex("""\[spacefile]\[(\d+)\]\[([^\]]*)\]\[([^\]]*)\]\[([^\]]*)\]""")
 
-    private val ALL_SHORTCODE_PATTERN = Regex("""\[(?:image|video|voice|spacefile)\]\[[^\]]+\](?:\[[^\]]+\])+""")
+    private val ALL_SHORTCODE_PATTERN = Regex("""\[(?:image|video|voice|spacelink|spacefile)\]\[[^\]]+\](?:\[[^\]]+\])+""")
 
     /**
      * 从 Markdown 中提取所有内容引用
@@ -50,6 +51,13 @@ object RichEditorHelper {
             val id = match.groupValues[1].toLongOrNull()
             if (id != null) {
                 references.add(ContentReference(refType = RefType.VOICE, targetId = id))
+            }
+        }
+
+        SPACE_LINK_PATTERN.findAll(markdown).forEach { match ->
+            val id = match.groupValues[1].toLongOrNull()
+            if (id != null) {
+                references.add(ContentReference(refType = RefType.SPACE_LINK, targetId = id))
             }
         }
 
@@ -88,6 +96,25 @@ object RichEditorHelper {
     }
 
     /**
+     * 为空间链接生成短代码
+     */
+    fun createSpaceLinkShortcode(
+        id: Long,
+        type: SpaceType,
+        webUrl: String,
+        name: String,
+        thumbnailUrl: String?
+    ): String {
+        val typeStr = when (type) {
+            SpaceType.PANORAMA_IMAGE -> "panorama_image"
+            SpaceType.PANORAMA_VIDEO -> "panorama_video"
+            SpaceType.GSPLAT -> "gsplat"
+        }
+        val thumbnail = thumbnailUrl ?: ""
+        return "[spacelink][$id][$typeStr][$webUrl][$name][$thumbnail]"
+    }
+
+    /**
      * 为空间文件生成短代码
      */
     fun createSpaceFileShortcode(
@@ -113,11 +140,8 @@ object RichEditorHelper {
             RefType.IMAGE -> Regex("""\[image]\[$targetId]\[[^\]]*]\[[^\]]*]""")
             RefType.VIDEO -> Regex("""\[video]\[$targetId]\[[^\]]*]\[[^\]]*]""")
             RefType.VOICE -> Regex("""\[voice]\[$targetId]\[[^\]]*]\[[^\]]*]""")
+            RefType.SPACE_LINK -> Regex("""\[spacelink]\[$targetId]\[[^\]]*]\[[^\]]*]\[[^\]]*]\[[^\]]*]""")
             RefType.SPACE_FILE -> Regex("""\[spacefile]\[$targetId]\[[^\]]*]\[[^\]]*]\[[^\]]*]""")
-            RefType.SPACE_LINK -> {
-                // 仅兼容性保留：移除已废弃的 [spacelink] 短代码
-                Regex("""\[spacelink]\[$targetId]\[[^\]]*]\[[^\]]*]\[[^\]]*]\[[^\]]*]""")
-            }
         }
         return pattern.replace(markdown, "")
     }
@@ -132,8 +156,8 @@ object RichEditorHelper {
             RefType.IMAGE -> IMAGE_PATTERN
             RefType.VIDEO -> VIDEO_PATTERN
             RefType.VOICE -> VOICE_PATTERN
-            RefType.SPACE_FILE -> return emptyMap()
             RefType.SPACE_LINK -> return emptyMap()
+            RefType.SPACE_FILE -> return emptyMap()
         }
         pattern.findAll(markdown).forEach { match ->
             val id = match.groupValues[1].toLongOrNull()
@@ -141,6 +165,25 @@ object RichEditorHelper {
             val name = match.groupValues[3]
             if (id != null) {
                 result[id] = path to name
+            }
+        }
+        return result
+    }
+
+    /**
+     * 从 Markdown 中提取空间链接短代码的信息
+     * 返回 map: id -> (type, webUrl, name, thumbnailUrl)
+     */
+    fun extractSpaceLinkInfo(markdown: String): Map<Long, SpaceLinkInfo> {
+        val result = mutableMapOf<Long, SpaceLinkInfo>()
+        SPACE_LINK_PATTERN.findAll(markdown).forEach { match ->
+            val id = match.groupValues[1].toLongOrNull()
+            val type = match.groupValues[2]
+            val webUrl = match.groupValues[3]
+            val name = match.groupValues[4]
+            val thumbnailUrl = match.groupValues[5]
+            if (id != null) {
+                result[id] = SpaceLinkInfo(type, webUrl, name, thumbnailUrl)
             }
         }
         return result
@@ -156,6 +199,33 @@ object RichEditorHelper {
             ""
         }
     }
+
+    /**
+     * 更新空间链接短代码中的信息
+     */
+    fun updateSpaceLinkShortcode(
+        markdown: String,
+        id: Long,
+        type: SpaceType,
+        webUrl: String,
+        name: String,
+        thumbnailUrl: String?
+    ): String {
+        val newShortcode = createSpaceLinkShortcode(id, type, webUrl, name, thumbnailUrl)
+        val pattern = Regex("""\[spacelink]\[$id]\[[^\]]*]\[[^\]]*]\[[^\]]*]\[[^\]]*]""")
+        return if (pattern.containsMatchIn(markdown)) {
+            pattern.replace(markdown, newShortcode)
+        } else {
+            markdown
+        }
+    }
+
+    data class SpaceLinkInfo(
+        val type: String,
+        val webUrl: String,
+        val name: String,
+        val thumbnailUrl: String
+    )
 
     data class SpaceFileInfo(
         val type: String,

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Folder
@@ -248,17 +250,21 @@ fun SettingsScreen(
                 val aboutText = """
                     ${welcomeText}
 
-                    本应用是一款混合方式记录记忆的应用，支持文字、语音、图片、视频、空间链接（全景图片、全景视频、高斯泼溅场景）等方式记录记忆内容。
+                    本应用是一款记录人生记忆的应用，支持文字、语音、图片、视频、全景图片、全景视频、高斯泼溅等方式记录记忆内容。
 
                     该版本只是一个简化版本，由于本人并非是专门搞编程的人，只是用AI写了下APP，不能写太复杂，那样不太适合，会太过于麻烦而且很难做出来。
                     
                     首次使用应用需要在设置页面中新建目录等相关操作，否则无法添加笔记内容，也无法直接添加图片等文件或其它内容。
                     
+                    本应用已经调整为全部本地化使用，因在手机上存储数据文件，考虑到使用手机空间需要节约使用，因此本应用适合轻量化使用，影像内容其实可以看个大概，从而不在意清晰度，对于需要在意的清晰度的往往是人像影像，您可以将这类影像媒体处理成清晰一些的，但建议尽量小体积，不仅是指普通图片、普通视频，也指全景图片、全景视频、高斯泼溅，高斯泼溅建议几十MB大小更好，如果你有高斯泼溅文件体积不是几十MB大小的，可以用某些工具转换压缩，这个您自行解决，本应用不再建议使用自带的备份或还原功能，因为随着记录增多，全部存储的数据文件总体积会变大很多，使用应用自带的备份和恢复会比较花费时间，过程中不确保不会出现错误问题，建议您结合应用“MT管理器”应用手动备份还原文件，操作时应退出本应用，将此路径目录 /storage/emulated/0/Android/data/com.retimebox.lite/retimeboxlitefiles/  下的所有文件备份，还原时解压文件还原到该目录下。
+                    
                     还原数据操作如果无法还原成功，请关闭本应用后，结合使用应用“MT管理器”，将备份后的压缩文件解压缩文件到 /Android/data/com.retimebox.lite/retimeboxlitefiles/ 目录下，进行此操作之前务必查看一下备份的压缩文件里是否正常看到文件，再进行手动还原操作，如果还原路径下有文件最好是删除处理后再进行手动还原操作。
 
                     如果有人感兴趣愿意去做或者有公司愿意去做，可以做出来一个完整的版本。
                 """.trimIndent()
-                Text(text = aboutText)
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(text = aboutText)
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -276,7 +282,9 @@ fun SettingsScreen(
             onDismissRequest = { showBackupConfirm = false },
             title = { Text(text = stringResource(R.string.backup_confirm_title)) },
             text = {
-                Text(text = stringResource(R.string.backup_confirm_message))
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(text = stringResource(R.string.backup_confirm_message))
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -378,17 +386,21 @@ fun AboutDialog(
             val aboutText = """
                 ${welcomeText}
 
-                本应用是一款混合方式记录记忆的应用，支持文字、语音、图片、视频、空间链接（全景图片、全景视频、高斯泼溅场景）等方式记录记忆内容。
+                本应用是一款记录人生记忆的应用，支持文字、语音、图片、视频、全景图片、全景视频、高斯泼溅等方式记录记忆内容。
 
                 该版本只是一个简化版本，由于本人并非是专门搞编程的人，只是用AI写了下APP，不能写太复杂，那样不太适合，会太过于麻烦而且很难做出来。
                 
                 首次使用应用需要在设置页面中新建目录等相关操作，否则无法添加笔记内容，也无法直接添加图片等文件或其它内容。
                 
+                本应用已经调整为全部本地化使用，因在手机上存储数据文件，考虑到使用手机空间需要节约使用，因此本应用适合轻量化使用，影像内容其实可以看个大概，从而不在意清晰度，对于需要在意的清晰度的往往是人像影像，您可以将这类影像媒体处理成清晰一些的，但建议尽量小体积，不仅是指普通图片、普通视频，也指全景图片、全景视频、高斯泼溅，高斯泼溅建议几十MB大小更好，如果你有高斯泼溅文件体积不是几十MB大小的，可以用某些工具转换压缩，这个您自行解决，本应用不再建议使用自带的备份或还原功能，因为随着记录增多，全部存储的数据文件总体积会变大很多，使用应用自带的备份和恢复会比较花费时间，过程中不确保不会出现错误问题，建议您结合应用“MT管理器”应用手动备份还原文件，操作时应退出本应用，将此路径目录 /storage/emulated/0/Android/data/com.retimebox.lite/retimeboxlitefiles/  下的所有文件备份，还原时解压文件还原到该目录下。
+                
                 还原数据操作如果无法还原成功，请关闭本应用后，结合使用应用"MT管理器"，将备份后的压缩文件解压缩文件到 /Android/data/com.retimebox.lite/retimeboxlitefiles/ 目录下，进行此操作之前务必查看一下备份的压缩文件里是否正常看到文件，再进行手动还原操作，如果还原路径下有文件最好是删除处理后再进行手动还原操作。
 
                 如果有人感兴趣愿意去做或者有公司愿意去做，可以做出来一个完整的版本。
             """.trimIndent()
-            Text(text = aboutText)
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(text = aboutText)
+            }
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {

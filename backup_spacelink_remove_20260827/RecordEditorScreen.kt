@@ -85,6 +85,7 @@ import com.retimebox.lite.data.local.entity.MediaItem
 import com.retimebox.lite.data.local.entity.MediaType
 import com.retimebox.lite.data.local.entity.RefType
 import com.retimebox.lite.data.local.entity.SpaceFileItem
+import com.retimebox.lite.data.local.entity.SpaceLinkItem
 import com.retimebox.lite.data.local.entity.SpaceType
 import com.retimebox.lite.ui.folder.FolderPicker
 import com.retimebox.lite.ui.components.VideoThumbnail
@@ -116,6 +117,7 @@ fun RecordEditorScreen(
     val saved by viewModel.saved.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val referencedMedia by viewModel.referencedMedia.collectAsStateWithLifecycle()
+    val referencedSpaceLinks by viewModel.referencedSpaceLinks.collectAsStateWithLifecycle()
     val referencedSpaceFiles by viewModel.referencedSpaceFiles.collectAsStateWithLifecycle()
     val allFolders by viewModel.allFolders.collectAsStateWithLifecycle()
 
@@ -124,6 +126,7 @@ fun RecordEditorScreen(
     var textFieldValue by remember { mutableStateOf(TextFieldValue()) }
 
     var showFolderPicker by remember { mutableStateOf(false) }
+    var showSpaceLinkDialog by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showRecordDialog by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
@@ -132,6 +135,11 @@ fun RecordEditorScreen(
     var recordingTempPath by remember { mutableStateOf<String?>(null) }
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var recordingPermissionGranted by remember { mutableStateOf(false) }
+    var spaceLinkType by remember { mutableStateOf(SpaceType.PANORAMA_IMAGE) }
+    var spaceLinkUrl by remember { mutableStateOf("") }
+    var spaceLinkName by remember { mutableStateOf("") }
+    var spaceLinkThumbnail by remember { mutableStateOf<String?>(null) }
+    var editingSpaceLinkId by remember { mutableStateOf<Long?>(null) }
 
     var showSpaceFileDialog by remember { mutableStateOf(false) }
     var editingSpaceFileId by remember { mutableStateOf<Long?>(null) }
@@ -139,6 +147,20 @@ fun RecordEditorScreen(
     var spaceFileName by remember { mutableStateOf("") }
     var spaceFileThumbnail by remember { mutableStateOf<String?>(null) }
     var spaceFilePath by remember { mutableStateOf<String?>(null) }
+
+    val spaceLinkThumbnailPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            scope.launch {
+                val path = FileHelper.copyThumbnailToDir(context, uri)
+                if (path != null) {
+                    FileHelper.deleteThumbnailFile(context, spaceLinkThumbnail)
+                    spaceLinkThumbnail = path
+                }
+            }
+        }
+    }
 
     val spaceFileThumbnailPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -536,6 +558,17 @@ fun RecordEditorScreen(
                 IconButton(onClick = { showRecordDialog = true }) {
                     Icon(Icons.Filled.Mic, contentDescription = "录音")
                 }
+                // 屏蔽插入空间链接图标，保留原代码不删除
+                // IconButton(onClick = {
+                //     editingSpaceLinkId = null
+                //     spaceLinkType = SpaceType.PANORAMA_IMAGE
+                //     spaceLinkUrl = ""
+                //     spaceLinkName = ""
+                //     spaceLinkThumbnail = null
+                //     showSpaceLinkDialog = true
+                // }) {
+                //     Icon(Icons.Filled.Link, contentDescription = stringResource(R.string.insert_space_link))
+                // }
                 IconButton(onClick = {
                     editingSpaceFileId = null
                     spaceFileType = SpaceType.PANORAMA_IMAGE
@@ -576,6 +609,15 @@ fun RecordEditorScreen(
                 viewModel.removeReference(id, refType)
             }
 
+            // 移除空间链接引用
+            fun removeSpaceLinkReference(id: Long) {
+                val currentMd = textFieldValue.text
+                val newMd = RichEditorHelper.removeReference(currentMd, RefType.SPACE_LINK, id)
+                textFieldValue = TextFieldValue(newMd)
+                viewModel.updateContentMarkdown(newMd)
+                viewModel.removeReference(id, RefType.SPACE_LINK)
+            }
+
             // 移除空间文件引用
             fun removeSpaceFileReference(id: Long) {
                 val currentMd = textFieldValue.text
@@ -586,7 +628,7 @@ fun RecordEditorScreen(
             }
 
             // 已添加的引用预览
-            if (referencedMedia.isNotEmpty() || referencedSpaceFiles.isNotEmpty()) {
+            if (referencedMedia.isNotEmpty() || referencedSpaceLinks.isNotEmpty() || referencedSpaceFiles.isNotEmpty()) {
                 Text(
                     text = "已添加的内容",
                     style = MaterialTheme.typography.labelMedium
@@ -599,6 +641,23 @@ fun RecordEditorScreen(
                         context = context,
                         onRemove = {
                             removeMediaReference(mediaItem.id, mediaItem.mediaType)
+                        }
+                    )
+                }
+
+                referencedSpaceLinks.forEach { link ->
+                    SpaceLinkPreviewCard(
+                        link = link,
+                        onClick = {
+                            editingSpaceLinkId = link.id
+                            spaceLinkType = link.spaceType
+                            spaceLinkUrl = link.webUrl
+                            spaceLinkName = link.name
+                            spaceLinkThumbnail = link.thumbnailUrl?.ifBlank { null }
+                            showSpaceLinkDialog = true
+                        },
+                        onRemove = {
+                            removeSpaceLinkReference(link.id)
                         }
                     )
                 }
@@ -690,6 +749,191 @@ fun RecordEditorScreen(
             },
             onPrimaryFolderSet = { folderId ->
                 viewModel.setPrimaryFolder(folderId)
+            }
+        )
+    }
+
+    // 空间链接对话框
+    if (showSpaceLinkDialog) {
+        val isEditing = editingSpaceLinkId != null
+        AlertDialog(
+            onDismissRequest = {
+                FileHelper.deleteThumbnailFile(context, spaceLinkThumbnail)
+                showSpaceLinkDialog = false
+                editingSpaceLinkId = null
+            },
+            title = { Text(if (isEditing) "编辑空间链接" else stringResource(R.string.insert_space_link)) },
+            text = {
+                Column {
+                    Text(
+                        text = stringResource(R.string.space_link_type),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = spaceLinkType == SpaceType.PANORAMA_IMAGE,
+                            onClick = { spaceLinkType = SpaceType.PANORAMA_IMAGE }
+                        )
+                        Text(
+                            text = stringResource(R.string.space_link_type_panorama_image),
+                            modifier = Modifier.clickable { spaceLinkType = SpaceType.PANORAMA_IMAGE }
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = spaceLinkType == SpaceType.PANORAMA_VIDEO,
+                            onClick = { spaceLinkType = SpaceType.PANORAMA_VIDEO }
+                        )
+                        Text(
+                            text = stringResource(R.string.space_link_type_panorama_video),
+                            modifier = Modifier.clickable { spaceLinkType = SpaceType.PANORAMA_VIDEO }
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = spaceLinkType == SpaceType.GSPLAT,
+                            onClick = { spaceLinkType = SpaceType.GSPLAT }
+                        )
+                        Text(
+                            text = stringResource(R.string.space_link_type_gsplat),
+                            modifier = Modifier.clickable { spaceLinkType = SpaceType.GSPLAT }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = spaceLinkUrl,
+                        onValueChange = { spaceLinkUrl = it },
+                        label = { Text(stringResource(R.string.space_link_web_url)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = spaceLinkName,
+                        onValueChange = { spaceLinkName = it },
+                        label = { Text(stringResource(R.string.space_link_name)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("缩略图", style = MaterialTheme.typography.labelMedium)
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    if (spaceLinkThumbnail != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(100.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        ) {
+                            AsyncImage(
+                                model = FileHelper.getFileFromRelativePath(context, spaceLinkThumbnail!!),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                            IconButton(
+                                onClick = {
+                                    FileHelper.deleteThumbnailFile(context, spaceLinkThumbnail)
+                                    spaceLinkThumbnail = null
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .background(
+                                        color = Color(0x88000000),
+                                        shape = RoundedCornerShape(50)
+                                    )
+                                    .width(28.dp)
+                                    .height(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "移除缩略图",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        TextButton(
+                            onClick = { spaceLinkThumbnailPickerLauncher.launch("image/*") },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("上传缩略图")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (spaceLinkUrl.isNotBlank()) {
+                        if (!isEditing && primaryFolderId == null && relatedFolderIds.isEmpty()) {
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    context.getString(R.string.folder_required)
+                                )
+                            }
+                        }
+                        scope.launch {
+                            if (isEditing) {
+                                viewModel.updateSpaceLinkReference(
+                                    id = editingSpaceLinkId!!,
+                                    spaceType = spaceLinkType,
+                                    webUrl = spaceLinkUrl,
+                                    name = spaceLinkName,
+                                    thumbnailUrl = spaceLinkThumbnail
+                                )
+                                val currentMd = textFieldValue.text
+                                val newMd = RichEditorHelper.updateSpaceLinkShortcode(
+                                    currentMd, editingSpaceLinkId!!,
+                                    spaceLinkType, spaceLinkUrl,
+                                    spaceLinkName, spaceLinkThumbnail
+                                )
+                                textFieldValue = TextFieldValue(newMd)
+                                viewModel.updateContentMarkdown(newMd)
+                            } else {
+                                val spaceLinkId = viewModel.addSpaceLinkReference(
+                                    spaceType = spaceLinkType,
+                                    webUrl = spaceLinkUrl,
+                                    name = spaceLinkName,
+                                    thumbnailUrl = spaceLinkThumbnail,
+                                    folderId = primaryFolderId
+                                )
+                                val shortcode = RichEditorHelper.createSpaceLinkShortcode(
+                                    spaceLinkId, spaceLinkType,
+                                    spaceLinkUrl, spaceLinkName,
+                                    spaceLinkThumbnail
+                                )
+                                textFieldValue = RichEditorHelper.insertAtCursor(textFieldValue, shortcode)
+                                viewModel.updateContentMarkdown(textFieldValue.text)
+                            }
+                        }
+                        showSpaceLinkDialog = false
+                        editingSpaceLinkId = null
+                    }
+                }) {
+                    Text(stringResource(R.string.ok))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    FileHelper.deleteThumbnailFile(context, spaceLinkThumbnail)
+                    showSpaceLinkDialog = false
+                    editingSpaceLinkId = null
+                }) {
+                    Text(stringResource(R.string.cancel))
+                }
             }
         )
     }
@@ -1175,6 +1419,108 @@ private fun MediaPreviewCard(
                 }
             }
 
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Filled.Close, contentDescription = null)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpaceLinkPreviewCard(
+    link: SpaceLinkItem,
+    onClick: () -> Unit,
+    onRemove: () -> Unit
+) {
+    val context = LocalContext.current
+    val typeLabel = when (link.spaceType) {
+        SpaceType.PANORAMA_IMAGE -> "全景图片"
+        SpaceType.PANORAMA_VIDEO -> "全景视频"
+        SpaceType.GSPLAT -> "高斯泼溅"
+    }
+    val bgColor = when (link.spaceType) {
+        SpaceType.PANORAMA_IMAGE -> Color(0xFFBBDEFB)
+        SpaceType.PANORAMA_VIDEO -> Color(0xFF90CAF9)
+        SpaceType.GSPLAT -> Color(0xFFB3E5FC)
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(60.dp)
+                    .height(60.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            ) {
+                if (link.thumbnailUrl != null && link.thumbnailUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = FileHelper.getFileFromRelativePath(context, link.thumbnailUrl),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(bgColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "3D",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color(0xFF0D47A1)
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .background(
+                            color = Color(0xFF1565C0),
+                            shape = RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = typeLabel.take(1),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = link.name.ifEmpty { link.webUrl },
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = typeLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF1565C0)
+                )
+            }
+
+            IconButton(onClick = onClick) {
+                Icon(Icons.Filled.Edit, contentDescription = null)
+            }
             IconButton(onClick = onRemove) {
                 Icon(Icons.Filled.Close, contentDescription = null)
             }

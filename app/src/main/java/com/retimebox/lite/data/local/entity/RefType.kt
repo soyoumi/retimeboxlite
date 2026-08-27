@@ -4,5 +4,6 @@ enum class RefType {
     IMAGE,
     VIDEO,
     VOICE,
-    SPACE_LINK
+    SPACE_LINK,
+    SPACE_FILE
 }

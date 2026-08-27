@@ -19,7 +19,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -27,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,7 +46,9 @@ import androidx.media3.ui.PlayerView
 import com.retimebox.lite.R
 import com.retimebox.lite.RetimeboxApplication
 import com.retimebox.lite.data.local.entity.MediaItem
+import com.retimebox.lite.data.local.entity.SourceType
 import com.retimebox.lite.util.FileHelper
+import kotlinx.coroutines.launch
 
 private fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -55,16 +61,19 @@ private fun Context.findActivity(): Activity? = when (this) {
 @Composable
 fun VideoPlayer(
     videoId: Long,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenRecord: (Long) -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
+    val scope = rememberCoroutineScope()
     val app = context.applicationContext as RetimeboxApplication
     val mediaRepository = app.mediaRepository
 
     var item by remember { mutableStateOf<MediaItem?>(null) }
     var videoTitle by remember { mutableStateOf("视频播放") }
     var isFullscreen by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val exoPlayer = remember(context) {
         ExoPlayer.Builder(context).build().apply {
@@ -122,15 +131,34 @@ fun VideoPlayer(
         topBar = {
             if (!isFullscreen) {
                 TopAppBar(
-                    title = { Text(videoTitle) },
+                    title = {
+                        Text(
+                            text = videoTitle,
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                         }
+                    },
+                    actions = {
+                        TextButton(onClick = {
+                            val current = item
+                            if (current != null && current.sourceType == SourceType.FROM_RECORD_INDEX && current.bindRecordId != null && current.bindRecordId > 0) {
+                                onOpenRecord(current.bindRecordId)
+                            } else {
+                                scope.launch { snackbarHostState.showSnackbar("非索引条目没有笔记来源") }
+                            }
+                        }) {
+                            Text("来源")
+                        }
                     }
                 )
             }
-        }
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { innerPadding ->
         Box(
             modifier = Modifier

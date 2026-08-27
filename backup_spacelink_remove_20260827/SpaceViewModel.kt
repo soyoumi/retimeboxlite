@@ -4,20 +4,26 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.retimebox.lite.RetimeboxApplication
-import com.retimebox.lite.data.local.entity.RefType
 import com.retimebox.lite.data.local.entity.SourceType
 import com.retimebox.lite.data.local.entity.SpaceFileItem
+import com.retimebox.lite.data.local.entity.SpaceLinkItem
 import com.retimebox.lite.data.local.entity.SpaceType
 import com.retimebox.lite.data.repository.FolderRepository
-import com.retimebox.lite.data.repository.RecordRepository
 import com.retimebox.lite.data.repository.SpaceFileRepository
+import com.retimebox.lite.data.repository.SpaceLinkRepository
 import com.retimebox.lite.ui.space.SpaceEntry
 import com.retimebox.lite.ui.space.SpaceEntryType
 import com.retimebox.lite.util.FileHelper
+import android.content.Context
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -26,21 +32,15 @@ import kotlinx.coroutines.launch
 class SpaceViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as RetimeboxApplication
+    private val spaceLinkRepository: SpaceLinkRepository = app.spaceLinkRepository
     private val spaceFileRepository: SpaceFileRepository = app.spaceFileRepository
     private val folderRepository: FolderRepository = app.folderRepository
-    private val recordRepository: RecordRepository = app.recordRepository
 
     private val _currentFolderId = MutableStateFlow<Long?>(null)
     val currentFolderId: StateFlow<Long?> = _currentFolderId.asStateFlow()
 
     private val _batchMode = MutableStateFlow(false)
     val batchMode: StateFlow<Boolean> = _batchMode.asStateFlow()
-
-    private val _forceDeleteMode = MutableStateFlow(false)
-    val forceDeleteMode: StateFlow<Boolean> = _forceDeleteMode.asStateFlow()
-
-    private val _forceDeleteEvent = MutableStateFlow<String?>(null)
-    val forceDeleteEvent: StateFlow<String?> = _forceDeleteEvent.asStateFlow()
 
     private val _selectedEntries = MutableStateFlow<List<SpaceEntry>>(emptyList())
     val selectedEntries: StateFlow<List<SpaceEntry>> = _selectedEntries.asStateFlow()
@@ -49,12 +49,26 @@ class SpaceViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     val itemsInFolder: StateFlow<List<SpaceEntry>> = currentFolderId.flatMapLatest { folderId ->
+        val linkFlow = if (folderId == null) {
+            spaceLinkRepository.observeAll()
+        } else {
+            spaceLinkRepository.observeByFolder(folderId)
+        }
         val fileFlow = if (folderId == null) {
             spaceFileRepository.observeAll()
         } else {
             spaceFileRepository.observeByFolder(folderId)
         }
-        fileFlow.map { files ->
+        combine(linkFlow, fileFlow) { links, files ->
+            val seenUrls = mutableMapOf<String, SpaceLinkItem>()
+            for (item in links) {
+                val key = item.webUrl
+                val existing = seenUrls[key]
+                if (existing == null || (item.sourceType == SourceType.FROM_RECORD_INDEX && existing.sourceType != SourceType.FROM_RECORD_INDEX)) {
+                    seenUrls[key] = item
+                }
+            }
+            val linkEntries = seenUrls.values.map { SpaceEntry.fromLink(it) }
             val seenPaths = mutableMapOf<String, SpaceFileItem>()
             for (item in files) {
                 val key = item.filePath
@@ -63,8 +77,8 @@ class SpaceViewModel(application: Application) : AndroidViewModel(application) {
                     seenPaths[key] = item
                 }
             }
-            seenPaths.values.map { SpaceEntry.fromFile(it) }
-                .sortedByDescending { it.createTime }
+            val fileEntries = seenPaths.values.map { SpaceEntry.fromFile(it) }
+            (linkEntries + fileEntries).sortedByDescending { it.createTime }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -97,7 +111,6 @@ class SpaceViewModel(application: Application) : AndroidViewModel(application) {
 
     fun exitBatchMode() {
         _batchMode.value = false
-        _forceDeleteMode.value = false
         _selectedEntries.value = emptyList()
     }
 
@@ -106,7 +119,7 @@ class SpaceViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleSelection(entry: SpaceEntry) {
-        if (entry.sourceType == SourceType.FROM_RECORD_INDEX && !_forceDeleteMode.value) return
+        if (entry.sourceType == SourceType.FROM_RECORD_INDEX) return
 
         val current = _selectedEntries.value
         _selectedEntries.value = if (current.any { it.id == entry.id && it.itemType == entry.itemType }) {
@@ -119,82 +132,23 @@ class SpaceViewModel(application: Application) : AndroidViewModel(application) {
     fun isEntrySelected(entry: SpaceEntry): Boolean =
         _selectedEntries.value.any { it.id == entry.id && it.itemType == entry.itemType }
 
-    fun toggleForceDeleteMode() {
-        if (!_forceDeleteMode.value) {
-            _forceDeleteMode.value = true
-            _selectedEntries.value = emptyList()
-            _forceDeleteEvent.value = "已进入强删模式，可勾选索引条目"
-        } else {
-            val current = _selectedEntries.value
-            if (current.isEmpty()) {
-                _forceDeleteMode.value = false
-                _forceDeleteEvent.value = "已退出强删模式"
-            } else {
-                viewModelScope.launch {
-                    batchForceDeleteInternal(current)
-                    _forceDeleteMode.value = false
-                    _batchMode.value = false
-                }
-            }
-        }
-    }
-
-    fun consumeForceDeleteEvent() {
-        _forceDeleteEvent.value = null
-    }
-
-    private suspend fun batchForceDeleteInternal(entries: List<SpaceEntry>) {
-        val context = getApplication<Application>()
-        val fileEntries = entries.filter { it.itemType == SpaceEntryType.FILE }
-        val ids = fileEntries.map { it.id }
-        val items = spaceFileRepository.findByIds(ids)
-        for (item in items) {
-            if (item.sourceType == SourceType.DIRECT_ADD) {
-                // 非索引条目且为空间文件：删物理文件+缩略图+MD 文件+DB
-                val file = FileHelper.getFileFromRelativePath(context, item.filePath)
-                if (file.exists()) file.delete()
-                if (!item.thumbnailUrl.isNullOrBlank()) {
-                    FileHelper.deleteThumbnailFile(context, item.thumbnailUrl)
-                }
-                FileHelper.deleteSpaceFileMd(context, item.id, item.createTime)
-                spaceFileRepository.deleteById(item.id)
-            } else {
-                // 索引条目：删笔记引用（同步 MD），再删对应 DIRECT_ADD + 物理文件+缩略图+spfile MD
-                item.bindRecordId?.let { recordId ->
-                    val directAdd = spaceFileRepository.findDirectAddByPath(item.filePath)
-                    if (directAdd != null) {
-                        recordRepository.removeReferenceFromRecord(recordId, RefType.SPACE_FILE, directAdd.id, context)
-                        // 删 DIRECT_ADD 物理文件 + 缩略图 + spfile MD + DB
-                        val directFile = FileHelper.getFileFromRelativePath(context, directAdd.filePath)
-                        if (directFile.exists()) directFile.delete()
-                        if (!directAdd.thumbnailUrl.isNullOrBlank()) {
-                            FileHelper.deleteThumbnailFile(context, directAdd.thumbnailUrl)
-                        }
-                        FileHelper.deleteSpaceFileMd(context, directAdd.id, directAdd.createTime)
-                        spaceFileRepository.deleteById(directAdd.id)
-                    }
-                }
-                FileHelper.deleteSpaceFileMd(context, item.id, item.createTime)
-                spaceFileRepository.deleteIndexItem(item.id)
-            }
-        }
-        _selectedEntries.value = emptyList()
-    }
-
     fun batchDelete() {
-        if (_forceDeleteMode.value) {
-            _forceDeleteEvent.value = "强删模式下禁止普通删除操作"
-            return
-        }
         viewModelScope.launch {
             val entries = _selectedEntries.value
+            val linkIds = entries.filter { it.itemType == SpaceEntryType.LINK }.map { it.id }
             val fileIds = entries.filter { it.itemType == SpaceEntryType.FILE }.map { it.id }
+            if (linkIds.isNotEmpty()) {
+                spaceLinkRepository.batchDeleteDirectAdd(
+                    ids = linkIds,
+                    context = getApplication()
+                )
+            }
             if (fileIds.isNotEmpty()) {
                 val directAddFileEntries = entries.filter {
                     it.itemType == SpaceEntryType.FILE && it.sourceType == SourceType.DIRECT_ADD
                 }
                 directAddFileEntries.forEach { entry ->
-                    FileHelper.deleteSpaceFileMd(getApplication(), entry.id, entry.createTime)
+                    deleteSpaceFileMd(getApplication(), entry.id, entry.createTime)
                 }
                 spaceFileRepository.batchDelete(fileIds, getApplication())
             }
@@ -206,7 +160,11 @@ class SpaceViewModel(application: Application) : AndroidViewModel(application) {
     fun batchMoveToFolder(targetFolderId: Long) {
         viewModelScope.launch {
             val entries = _selectedEntries.value
+            val linkIds = entries.filter { it.itemType == SpaceEntryType.LINK }.map { it.id }
             val fileIds = entries.filter { it.itemType == SpaceEntryType.FILE }.map { it.id }
+            if (linkIds.isNotEmpty()) {
+                spaceLinkRepository.batchMoveFolder(linkIds, targetFolderId)
+            }
             if (fileIds.isNotEmpty()) {
                 spaceFileRepository.batchMoveFolder(fileIds, targetFolderId)
             }
@@ -231,7 +189,29 @@ class SpaceViewModel(application: Application) : AndroidViewModel(application) {
                 thumbnailUrl = thumbnailUrl,
                 folderId = targetFolderId
             )
-            FileHelper.saveSpaceFileMd(getApplication(), item)
+            createSpaceFileMd(getApplication(), item)
+        }
+    }
+
+    private fun createSpaceFileMd(context: Context, item: SpaceFileItem) {
+        val year = SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(item.createTime))
+        val typeStr = when (item.spaceType) {
+            SpaceType.PANORAMA_IMAGE -> "全景图片"
+            SpaceType.PANORAMA_VIDEO -> "全景视频"
+            SpaceType.GSPLAT -> "高斯泼溅"
+        }
+        val mdRelativePath = "spfile/$year/${item.id}.md"
+        val mdFile = FileHelper.getFileFromRelativePath(context, mdRelativePath)
+        mdFile.parentFile?.mkdirs()
+        mdFile.writeText("$typeStr\n${item.name}\n${item.filePath}\n${item.thumbnailUrl ?: ""}")
+    }
+
+    private fun deleteSpaceFileMd(context: Context, id: Long, createTime: Long) {
+        val year = SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(createTime))
+        val mdRelativePath = "spfile/$year/$id.md"
+        val mdFile = FileHelper.getFileFromRelativePath(context, mdRelativePath)
+        if (mdFile.exists()) {
+            mdFile.delete()
         }
     }
 
@@ -252,7 +232,7 @@ class SpaceViewModel(application: Application) : AndroidViewModel(application) {
             )
             spaceFileRepository.update(updated)
             if (updated.sourceType == SourceType.DIRECT_ADD) {
-                FileHelper.saveSpaceFileMd(getApplication(), updated)
+                createSpaceFileMd(getApplication(), updated)
             }
         }
     }
@@ -260,6 +240,45 @@ class SpaceViewModel(application: Application) : AndroidViewModel(application) {
     fun getSpaceFileById(id: Long, onResult: (SpaceFileItem?) -> Unit) {
         viewModelScope.launch {
             onResult(spaceFileRepository.findById(id))
+        }
+    }
+
+    fun addSpaceLink(
+        spaceType: SpaceType,
+        webUrl: String,
+        name: String,
+        thumbnailUrl: String?,
+        folderId: Long?
+    ) {
+        viewModelScope.launch {
+            val targetFolderId = folderId ?: 0L
+            spaceLinkRepository.addDirectAdd(
+                context = getApplication(),
+                spaceType = spaceType,
+                webUrl = webUrl,
+                name = name,
+                thumbnailUrl = thumbnailUrl,
+                folderId = targetFolderId
+            )
+        }
+    }
+
+    fun updateSpaceLink(
+        id: Long,
+        spaceType: SpaceType,
+        webUrl: String,
+        name: String,
+        thumbnailUrl: String?
+    ) {
+        viewModelScope.launch {
+            val item = spaceLinkRepository.findById(id) ?: return@launch
+            val updated = item.copy(
+                spaceType = spaceType,
+                webUrl = webUrl,
+                name = name,
+                thumbnailUrl = thumbnailUrl
+            )
+            spaceLinkRepository.update(updated)
         }
     }
 }

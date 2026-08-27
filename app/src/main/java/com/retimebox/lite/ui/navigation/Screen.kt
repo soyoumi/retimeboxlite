@@ -33,5 +33,10 @@ sealed class Screen(val route: String) {
         const val ARG_SPACE_LINK_ID = "spaceLinkId"
     }
 
+    data object SpaceFileViewer : Screen("space_file_viewer/{spaceFileId}") {
+        fun createRoute(spaceFileId: Long) = "space_file_viewer/$spaceFileId"
+        const val ARG_SPACE_FILE_ID = "spaceFileId"
+    }
+
     data object FolderManager : Screen("folder_manager")
 }

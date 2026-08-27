@@ -6,9 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.retimebox.lite.RetimeboxApplication
 import com.retimebox.lite.data.local.entity.MediaItem
 import com.retimebox.lite.data.local.entity.MediaType
+import com.retimebox.lite.data.local.entity.RefType
 import com.retimebox.lite.data.local.entity.SourceType
 import com.retimebox.lite.data.repository.FolderRepository
 import com.retimebox.lite.data.repository.MediaRepository
+import com.retimebox.lite.data.repository.RecordRepository
 import com.retimebox.lite.util.FileHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,12 +26,19 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as RetimeboxApplication
     private val mediaRepository: MediaRepository = app.mediaRepository
     private val folderRepository: FolderRepository = app.folderRepository
+    private val recordRepository: RecordRepository = app.recordRepository
 
     private val _currentFolderId = MutableStateFlow<Long?>(null)
     val currentFolderId: StateFlow<Long?> = _currentFolderId.asStateFlow()
 
     private val _batchMode = MutableStateFlow(false)
     val batchMode: StateFlow<Boolean> = _batchMode.asStateFlow()
+
+    private val _forceDeleteMode = MutableStateFlow(false)
+    val forceDeleteMode: StateFlow<Boolean> = _forceDeleteMode.asStateFlow()
+
+    private val _forceDeleteEvent = MutableStateFlow<String?>(null)
+    val forceDeleteEvent: StateFlow<String?> = _forceDeleteEvent.asStateFlow()
 
     private val _selectedIds = MutableStateFlow<Set<Long>>(emptySet())
     val selectedIds: StateFlow<Set<Long>> = _selectedIds.asStateFlow()
@@ -83,11 +92,12 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
 
     fun exitBatchMode() {
         _batchMode.value = false
+        _forceDeleteMode.value = false
         _selectedIds.value = emptySet()
     }
 
     fun toggleSelection(id: Long, sourceType: SourceType) {
-        if (sourceType == SourceType.FROM_RECORD_INDEX) return
+        if (sourceType == SourceType.FROM_RECORD_INDEX && !_forceDeleteMode.value) return
 
         val current = _selectedIds.value
         _selectedIds.value = if (current.contains(id)) {
@@ -101,7 +111,63 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
         _selectedIds.value = emptySet()
     }
 
+    fun toggleForceDeleteMode() {
+        if (!_forceDeleteMode.value) {
+            _forceDeleteMode.value = true
+            _selectedIds.value = emptySet()
+            _forceDeleteEvent.value = "已进入强删模式，可勾选索引条目"
+        } else {
+            val current = _selectedIds.value
+            if (current.isEmpty()) {
+                _forceDeleteMode.value = false
+                _forceDeleteEvent.value = "已退出强删模式"
+            } else {
+                viewModelScope.launch {
+                    batchForceDeleteInternal(current.toList())
+                    _forceDeleteMode.value = false
+                    _batchMode.value = false
+                }
+            }
+        }
+    }
+
+    fun consumeForceDeleteEvent() {
+        _forceDeleteEvent.value = null
+    }
+
+    private suspend fun batchForceDeleteInternal(ids: List<Long>) {
+        val items = mediaRepository.findByIds(ids)
+        val context = getApplication<Application>()
+        for (item in items) {
+            if (item.sourceType == SourceType.DIRECT_ADD) {
+                FileHelper.deleteRelativePath(context, item.fileRelativePath)
+                mediaRepository.deleteById(item.id) { /* 已删文件 */ }
+            } else {
+                item.bindRecordId?.let { recordId ->
+                    val directAdd = mediaRepository.findDirectAddByPath(item.fileRelativePath, item.mediaType)
+                    if (directAdd != null) {
+                        val refType = when (item.mediaType) {
+                            MediaType.IMAGE -> RefType.IMAGE
+                            MediaType.VIDEO -> RefType.VIDEO
+                            MediaType.VOICE -> RefType.VOICE
+                        }
+                        recordRepository.removeReferenceFromRecord(recordId, refType, directAdd.id, context)
+                        mediaRepository.deleteById(directAdd.id) { path ->
+                            FileHelper.deleteRelativePath(context, path)
+                        }
+                    }
+                }
+                mediaRepository.deleteIndexItem(item.id)
+            }
+        }
+        _selectedIds.value = emptySet()
+    }
+
     fun batchDelete() {
+        if (_forceDeleteMode.value) {
+            _forceDeleteEvent.value = "强删模式下禁止普通删除操作"
+            return
+        }
         viewModelScope.launch {
             val ids = _selectedIds.value.toList()
             mediaRepository.batchDeleteDirectAdd(ids) { path ->

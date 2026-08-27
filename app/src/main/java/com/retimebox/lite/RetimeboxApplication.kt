@@ -5,6 +5,7 @@ import com.retimebox.lite.data.local.AppDatabase
 import com.retimebox.lite.data.repository.FolderRepository
 import com.retimebox.lite.data.repository.MediaRepository
 import com.retimebox.lite.data.repository.RecordRepository
+import com.retimebox.lite.data.repository.SpaceFileRepository
 import com.retimebox.lite.data.repository.SpaceLinkRepository
 import com.tencent.smtt.sdk.QbSdk
 
@@ -27,7 +28,8 @@ class RetimeboxApplication : Application() {
             database.recordDao()
         )
     }
-    val recordRepository by lazy { RecordRepository(database.recordDao(), database.mediaItemDao(), database.spaceLinkItemDao()) }
+    val recordRepository by lazy { RecordRepository(database.recordDao(), database.mediaItemDao(), database.spaceLinkItemDao(), database.spaceFileItemDao()) }
     val mediaRepository by lazy { MediaRepository(database.mediaItemDao(), database.recordDao()) }
     val spaceLinkRepository by lazy { SpaceLinkRepository(database.spaceLinkItemDao(), database.recordDao()) }
+    val spaceFileRepository by lazy { SpaceFileRepository(database.spaceFileItemDao()) }
 }

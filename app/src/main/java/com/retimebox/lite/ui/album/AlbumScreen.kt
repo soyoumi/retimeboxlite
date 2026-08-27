@@ -1,6 +1,7 @@
 package com.retimebox.lite.ui.album
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.defaultMinSize
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -82,6 +84,8 @@ fun AlbumScreen(
     val scope = rememberCoroutineScope()
     val currentFolderId by viewModel.currentFolderId.collectAsStateWithLifecycle()
     val batchMode by viewModel.batchMode.collectAsStateWithLifecycle()
+    val forceDeleteMode by viewModel.forceDeleteMode.collectAsStateWithLifecycle()
+    val forceDeleteEvent by viewModel.forceDeleteEvent.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
     val imagesInFolder by viewModel.imagesInFolder.collectAsStateWithLifecycle()
     val rootFolders by viewModel.rootFolders.collectAsStateWithLifecycle()
@@ -90,6 +94,15 @@ fun AlbumScreen(
     var showFolderPickerDialog by remember { mutableStateOf(false) }
     var showFolderTree by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(forceDeleteEvent) {
+        forceDeleteEvent?.let {
+            scope.launch {
+                snackbarHostState.showSnackbar(it)
+            }
+            viewModel.consumeForceDeleteEvent()
+        }
+    }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -250,19 +263,45 @@ fun AlbumScreen(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Row {
-                        TextButton(onClick = { viewModel.clearSelection() }) {
+                        TextButton(
+                            onClick = { viewModel.clearSelection() },
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
                             Text(stringResource(R.string.cancel))
                         }
-                        TextButton(onClick = { showFolderPickerDialog = true }) {
+                        TextButton(
+                            onClick = { showFolderPickerDialog = true },
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
                             Text(stringResource(R.string.batch_move_folder))
                         }
-                        TextButton(onClick = { viewModel.batchDelete() }) {
+                        TextButton(
+                            onClick = { viewModel.toggleForceDeleteMode() },
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
+                            Text(
+                                text = "强删",
+                                color = if (forceDeleteMode) Color.Red else Color.DarkGray
+                            )
+                        }
+                        TextButton(
+                            onClick = { viewModel.batchDelete() },
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
                             Text(
                                 text = stringResource(R.string.batch_delete),
                                 color = MaterialTheme.colorScheme.error
                             )
                         }
-                        TextButton(onClick = { viewModel.exitBatchMode() }) {
+                        TextButton(
+                            onClick = { viewModel.exitBatchMode() },
+                            modifier = Modifier.defaultMinSize(minWidth = 1.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
                             Text(stringResource(R.string.exit_batch_mode))
                         }
                     }
@@ -303,25 +342,26 @@ fun AlbumScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(imagesInFolder) { image ->
-                        ImageGridItem(
-                            item = image,
-                            isSelected = selectedIds.contains(image.id),
-                            batchMode = batchMode,
-                            onClick = {
-                                if (batchMode) {
-                                    viewModel.toggleSelection(image.id, image.sourceType)
-                                } else {
-                                    onOpenImage(image.id)
-                                }
-                            },
-                            onLongClick = {
-                                if (!batchMode) {
-                                    viewModel.enterBatchMode()
-                                    viewModel.toggleSelection(image.id, image.sourceType)
-                                }
+                    ImageGridItem(
+                        item = image,
+                        isSelected = selectedIds.contains(image.id),
+                        batchMode = batchMode,
+                        forceDeleteMode = forceDeleteMode,
+                        onClick = {
+                            if (batchMode) {
+                                viewModel.toggleSelection(image.id, image.sourceType)
+                            } else {
+                                onOpenImage(image.id)
                             }
-                        )
-                    }
+                        },
+                        onLongClick = {
+                            if (!batchMode) {
+                                viewModel.enterBatchMode()
+                                viewModel.toggleSelection(image.id, image.sourceType)
+                            }
+                        }
+                    )
+                }
                 }
             }
         }
@@ -349,16 +389,18 @@ private fun ImageGridItem(
     item: MediaItem,
     isSelected: Boolean,
     batchMode: Boolean,
+    forceDeleteMode: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {}
 ) {
     val isIndexItem = item.sourceType == SourceType.FROM_RECORD_INDEX
+    val indexSelectable = isIndexItem && forceDeleteMode
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                enabled = !batchMode || !isIndexItem,
+                enabled = !batchMode || !isIndexItem || indexSelectable,
                 onClick = onClick,
                 onLongClick = onLongClick
             )
@@ -406,14 +448,14 @@ private fun ImageGridItem(
                 }
             }
 
-            // 选中标记
-            if (isSelected) {
+            // 选中标记（强删模式或普通选中都显示在右下角）
+            if (isSelected && (batchMode || forceDeleteMode)) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(Alignment.BottomEnd)
                         .padding(4.dp)
                         .background(
-                            color = MaterialTheme.colorScheme.primary,
+                            color = if (forceDeleteMode) Color.Red else MaterialTheme.colorScheme.primary,
                             shape = RoundedCornerShape(50)
                         )
                         .padding(2.dp)
@@ -429,8 +471,8 @@ private fun ImageGridItem(
                 }
             }
 
-            // 索引条目禁用遮罩
-            if (isIndexItem && batchMode) {
+            // 索引条目禁用遮罩（非强删模式才显示）
+            if (isIndexItem && batchMode && !forceDeleteMode) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

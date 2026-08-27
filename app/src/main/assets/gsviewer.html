@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>高斯泼溅查看器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+        #loading {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff; font-family: sans-serif; font-size: 16px;
+            text-align: center; z-index: 10;
+            background: rgba(0,0,0,0.85);
+            padding: 25px 35px;
+            border-radius: 12px;
+            max-width: 85%;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        #loading .spinner {
+            display: inline-block;
+            width: 32px; height: 32px;
+            border: 3px solid #444;
+            border-top-color: #64b5f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 12px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        #loadingText {
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        #info {
+            position: fixed; bottom: 16px; left: 50%;
+            transform: translateX(-50%);
+            color: #8bc34a; font-family: monospace; font-size: 11px;
+            text-align: center; z-index: 10;
+            background: rgba(0,0,0,0.75);
+            padding: 6px 10px;
+            border-radius: 4px;
+            max-width: 90%;
+            word-break: break-all;
+            display: none;
+        }
+        #debug {
+            position: fixed; top: 8px; left: 8px;
+            color: #ffeb3b; font-family: monospace; font-size: 10px;
+            text-align: left; z-index: 20;
+            background: rgba(0,0,0,0.85);
+            padding: 6px 8px;
+            border-radius: 4px;
+            max-width: 95%;
+            max-height: 70vh;
+            overflow-y: auto;
+            word-break: break-all;
+            display: none;
+            border: 1px solid #ffeb3b;
+            white-space: pre-wrap;
+        }
+        #dbgToggle {
+            position: fixed; top: 4px; right: 4px;
+            z-index: 30;
+            background: rgba(0,0,0,0.5);
+            color: rgba(255,255,255,0.25);
+            font-family: monospace; font-size: 9px;
+            padding: 2px 5px;
+            border-radius: 3px;
+            cursor: pointer;
+            user-select: none;
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+        #dbgToggle.active {
+            color: #ffeb3b;
+            border-color: #ffeb3b;
+        }
+        iframe {
+            width: 100%; height: 100%; border: none;
+            display: block;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <div id="loadingText">正在初始化渲染引擎...</div>
+    </div>
+    <div id="info"></div>
+    <div id="debug"></div>
+    <div id="dbgToggle">DBG</div>
+    <iframe id="viewer" allow="xr-spatial-tracking"></iframe>
+
+    <script>
+        (function() {
+            var params = new URLSearchParams(window.location.search);
+            var contentUrl = params.get('content') || '';
+            var loadingText = document.getElementById('loadingText');
+            var infoEl = document.getElementById('info');
+            var viewer = document.getElementById('viewer');
+
+            if (!contentUrl) {
+                loadingText.innerHTML = '<span style="color:#f44336">错误</span><br>未指定文件地址参数';
+                return;
+            }
+
+            var fileName = '';
+            try {
+                var parsed = new URL(contentUrl);
+                fileName = decodeURIComponent(parsed.pathname.split('/').pop() || '');
+                if (!fileName) {
+                    var pathParam = parsed.searchParams.get('path') || '';
+                    fileName = decodeURIComponent(pathParam.split('/').pop() || '');
+                }
+            } catch (e) {
+                fileName = contentUrl;
+            }
+
+            loadingText.innerHTML = '正在加载高斯泼溅查看器...<br><small style="opacity:0.7">文件: ' + fileName + '</small>';
+
+            var localUrl = './gspublic/index.html' +
+                '?content=' + encodeURIComponent(contentUrl) +
+                '&webgl=1' +
+                '&fullload=1' +
+                '&ministats=1';
+
+            // 诊断：先验证 contentUrl 是否可访问
+            // 注意：showDebug 只追加消息到 #debug，不自动显示。
+            // 点击右上角 DBG 按钮可切换显示/隐藏。
+            var dbgToggle = document.getElementById('dbgToggle');
+            if (dbgToggle) {
+                dbgToggle.addEventListener('click', function() {
+                    var dbg = document.getElementById('debug');
+                    if (dbg) {
+                        var isShown = dbg.style.display === 'block';
+                        dbg.style.display = isShown ? 'none' : 'block';
+                        dbgToggle.classList.toggle('active', !isShown);
+                        if (!isShown) dbg.scrollTop = dbg.scrollHeight;
+                    }
+                });
+            }
+
+            function showDebug(msg) {
+                var dbg = document.getElementById('debug');
+                if (dbg) {
+                    var line = document.createElement('div');
+                    line.textContent = msg;
+                    dbg.appendChild(line);
+                    // 保留最后 30 条
+                    while (dbg.childNodes.length > 30) {
+                        dbg.removeChild(dbg.firstChild);
+                    }
+                    if (dbg.style.display === 'block') {
+                        dbg.scrollTop = dbg.scrollHeight;
+                    }
+                }
+            }
+
+            fetch(contentUrl, { method: 'GET' })
+                .then(function(resp) {
+                    var ct = resp.headers.get('Content-Type') || '';
+                    var cl = resp.headers.get('Content-Length') || '?';
+                    showDebug('Fetch: ' + resp.status + ' ' + resp.statusText +
+                              ' | MIME: ' + ct + ' | Size: ' + cl);
+                    if (!resp.ok) {
+                        loadingText.innerHTML = '<span style="color:#f44336">文件获取失败</span><br>' +
+                                                'HTTP ' + resp.status + ' ' + resp.statusText;
+                    }
+                })
+                .catch(function(err) {
+                    showDebug('Fetch ERROR: ' + (err && err.message ? err.message : String(err)));
+                    loadingText.innerHTML = '<span style="color:#f44336">文件获取异常</span><br>' +
+                                            '<small>' + (err && err.message ? err.message : String(err)) + '</small>';
+                });
+
+            // iframe 加载后注入 canvas 像素轮询（console 转发已在 gspublic/index.html 头部处理）
+            viewer.addEventListener('load', function() {
+                showDebug('iframe load fired');
+                try {
+                    var w = viewer.contentWindow;
+                    var d = w.document;
+                    var script = d.createElement('script');
+                    script.textContent =
+                        "(function(){" +
+                        "  var pollCount = 0;" +
+                        "  var poll = setInterval(function(){" +
+                        "    pollCount++;" +
+                        "    try {" +
+                        "      var c = document.getElementById('application-canvas');" +
+                        "      if (!c) { if (pollCount < 30) return; clearInterval(poll); parent.postMessage({source:'gsplat-frame',level:'CANVAS',msg:'canvas NOT FOUND'},'*'); return; }" +
+                        "      var cw = c.width, ch = c.height;" +
+                        "      var gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl');" +
+                        "      if (!gl) { parent.postMessage({source:'gsplat-frame',level:'CANVAS',msg:'no WebGL ctx; size=' + cw + 'x' + ch},'*'); return; }" +
+                        "      var px = new Uint8Array(4);" +
+                        "      gl.readPixels(Math.floor(cw/2), Math.floor(ch/2), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);" +
+                        "      parent.postMessage({source:'gsplat-frame',level:'CANVAS',msg:'size=' + cw + 'x' + ch + ' center RGBA=(' + px[0] + ',' + px[1] + ',' + px[2] + ',' + px[3] + ')'},'*');" +
+                        "      if (pollCount >= 10) clearInterval(poll);" +
+                        "    } catch(e) { parent.postMessage({source:'gsplat-frame',level:'CANVAS-ERR',msg:e.message},'*'); }" +
+                        "  }, 1500);" +
+                        "})();";
+                    (d.body || d.documentElement).appendChild(script);
+                    showDebug('canvas poll injected');
+                } catch (e) {
+                    showDebug('inject fail: ' + (e && e.message ? e.message : String(e)));
+                }
+            });
+
+            // 接收 iframe postMessage
+            window.addEventListener('message', function(e) {
+                if (e.data && e.data.source === 'gsplat-frame') {
+                    showDebug('[' + e.data.level + '] ' + e.data.msg);
+                }
+            });
+
+            viewer.onload = function() {
+                setTimeout(function() {
+                    document.getElementById('loading').style.display = 'none';
+                }, 500);
+            };
+
+            viewer.onerror = function() {
+                loadingText.innerHTML = '<span style="color:#f44336">加载失败</span><br>WebGL 初始化失败<br><small>请确认设备支持 WebGL</small>';
+            };
+
+            viewer.src = localUrl;
+
+            var stages = [
+                { delay: 2000, text: '正在初始化 WebGL 渲染...' },
+                { delay: 4000, text: '正在加载场景数据...' },
+                { delay: 6000, text: '正在构建3D场景...' },
+                { delay: 8000, text: '即将完成...' }
+            ];
+
+            stages.forEach(function(stage) {
+                setTimeout(function() {
+                    if (loadingText.textContent.indexOf('加载失败') === -1) {
+                        loadingText.innerHTML = stage.text + '<br><small style="opacity:0.7">' + fileName + '</small>';
+                    }
+                }, stage.delay);
+            });
+
+            setTimeout(function() {
+                var loadingEl = document.getElementById('loading');
+                if (loadingEl.style.display !== 'none' && loadingText.textContent.indexOf('加载失败') === -1) {
+                    loadingEl.style.display = 'none';
+                }
+            }, 12000);
+
+        })();
+    </script>
+</body>
+</html>

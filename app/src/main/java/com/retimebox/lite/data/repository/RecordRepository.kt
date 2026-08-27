@@ -3,6 +3,7 @@ package com.retimebox.lite.data.repository
 import android.content.Context
 import com.retimebox.lite.data.local.dao.MediaItemDao
 import com.retimebox.lite.data.local.dao.RecordDao
+import com.retimebox.lite.data.local.dao.SpaceFileItemDao
 import com.retimebox.lite.data.local.dao.SpaceLinkItemDao
 import com.retimebox.lite.data.local.entity.ContentReference
 import com.retimebox.lite.data.local.entity.MediaItem
@@ -11,12 +12,14 @@ import com.retimebox.lite.data.local.entity.RefType
 import com.retimebox.lite.data.local.entity.SourceType
 import com.retimebox.lite.data.local.entity.SpaceLinkItem
 import com.retimebox.lite.util.FileHelper
+import com.retimebox.lite.util.RichEditorHelper
 import kotlinx.coroutines.flow.Flow
 
 class RecordRepository(
     private val recordDao: RecordDao,
     private val mediaItemDao: MediaItemDao,
-    private val spaceLinkItemDao: SpaceLinkItemDao
+    private val spaceLinkItemDao: SpaceLinkItemDao,
+    private val spaceFileItemDao: SpaceFileItemDao
 ) {
 
     fun observeRecord(id: Long): Flow<Record?> = recordDao.observeById(id)
@@ -78,6 +81,7 @@ class RecordRepository(
         // 清理旧索引条目（FROM_RECORD_INDEX）
         mediaItemDao.deleteIndexItemsByRecord(id)
         spaceLinkItemDao.deleteIndexItemsByRecord(id)
+        spaceFileItemDao.deleteIndexItemsByRecord(id)
 
         // 更新笔记
         val updated = oldRecord.copy(
@@ -201,6 +205,28 @@ class RecordRepository(
                         spaceLinkItemDao.insert(newItem)
                     }
                 }
+                RefType.SPACE_FILE -> {
+                    val existing = spaceFileItemDao.findById(ref.targetId)
+                    if (existing != null) {
+                        val effectiveFolderId = primaryFolderId ?: existing.folderId
+
+                        val existingIndex = spaceFileItemDao.getIndexItemByPathAndRecord(
+                            effectiveFolderId, existing.filePath, recordId
+                        )
+                        if (existingIndex != null) {
+                            continue
+                        }
+
+                        val newItem = existing.copy(
+                            id = 0,
+                            sourceType = SourceType.FROM_RECORD_INDEX,
+                            bindRecordId = recordId,
+                            folderId = effectiveFolderId,
+                            createTime = System.currentTimeMillis()
+                        )
+                        spaceFileItemDao.insert(newItem)
+                    }
+                }
             }
         }
     }
@@ -233,6 +259,14 @@ class RecordRepository(
                 spaceLinkItemDao.update(item.copy(folderId = newFolderId))
             }
         }
+
+        val indexSpaceFiles = spaceFileItemDao.getIndexItemsByRecord(recordId)
+        for (item in indexSpaceFiles) {
+            val newFolderId = primaryFolderId ?: item.folderId
+            if (newFolderId != item.folderId) {
+                spaceFileItemDao.update(item.copy(folderId = newFolderId))
+            }
+        }
     }
 
     /**
@@ -240,5 +274,41 @@ class RecordRepository(
      */
     fun search(query: String): Flow<List<Record>> {
         return recordDao.searchByTitleOrContent(query)
+    }
+
+    /**
+     * 强删场景：从笔记中移除指定引用并同步 MD 文件
+     * 内部走 updateRecord 路径，会清理旧索引条目并重建
+     */
+    suspend fun removeReferenceFromRecord(
+        recordId: Long,
+        refType: RefType,
+        targetId: Long,
+        context: Context
+    ) {
+        val record = recordDao.findById(recordId) ?: return
+        val newRefs = record.contentReferenceIds.filterNot {
+            it.refType == refType && it.targetId == targetId
+        }
+        val newMd = RichEditorHelper.removeReference(record.contentMarkdown, refType, targetId)
+        if (newRefs == record.contentReferenceIds && newMd == record.contentMarkdown) return
+
+        updateRecord(
+            id = recordId,
+            recordDate = record.recordDate,
+            title = record.title,
+            contentMarkdown = newMd,
+            relatedFolderIds = record.relatedFolderIds,
+            primaryFolderId = record.primaryFolderId,
+            contentReferences = newRefs
+        )
+
+        FileHelper.saveRecordMarkdown(
+            context = context,
+            recordId = recordId,
+            title = record.title,
+            contentMarkdown = newMd,
+            recordDate = record.recordDate
+        )
     }
 }

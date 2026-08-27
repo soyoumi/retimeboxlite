@@ -52,6 +52,12 @@ interface MediaItemDao {
     @Query("SELECT * FROM media_items WHERE id IN (:ids) AND sourceType != 'FROM_RECORD_INDEX'")
     suspend fun getDirectAddByIds(ids: List<Long>): List<MediaItem>
 
+    @Query("SELECT * FROM media_items WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<Long>): List<MediaItem>
+
+    @Query("SELECT * FROM media_items WHERE fileRelativePath = :filePath AND mediaType = :mediaType AND sourceType = 'DIRECT_ADD' LIMIT 1")
+    suspend fun findDirectAddByPath(filePath: String, mediaType: MediaType): MediaItem?
+
     @Query("DELETE FROM media_items WHERE id = :id")
     suspend fun deleteById(id: Long)
 

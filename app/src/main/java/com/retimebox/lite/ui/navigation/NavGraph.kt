@@ -14,6 +14,7 @@ import com.retimebox.lite.ui.media.VideoPlayer
 import com.retimebox.lite.ui.record.RecordDetailScreen
 import com.retimebox.lite.ui.record.RecordEditorScreen
 import com.retimebox.lite.ui.settings.FolderManagerScreen
+import com.retimebox.lite.ui.spacelink.SpaceFileViewer
 import com.retimebox.lite.ui.spacelink.SpaceLinkWebView
 
 @Composable
@@ -40,8 +41,8 @@ fun NavGraph(
                 onOpenVideo = { videoId ->
                     navController.navigate(Screen.VideoPlayer.createRoute(videoId))
                 },
-                onOpenSpaceLink = { linkId ->
-                    navController.navigate(Screen.SpaceLinkWebView.createRoute(linkId))
+                onOpenSpaceFile = { fileId ->
+                    navController.navigate(Screen.SpaceFileViewer.createRoute(fileId))
                 },
                 onOpenFolderManager = {
                     navController.navigate(Screen.FolderManager.route)
@@ -69,8 +70,8 @@ fun NavGraph(
                 onOpenVideo = { videoId ->
                     navController.navigate(Screen.VideoPlayer.createRoute(videoId))
                 },
-                onOpenSpaceLink = { linkId ->
-                    navController.navigate(Screen.SpaceLinkWebView.createRoute(linkId))
+                onOpenSpaceFile = { fileId ->
+                    navController.navigate(Screen.SpaceFileViewer.createRoute(fileId))
                 }
             )
         }
@@ -95,7 +96,10 @@ fun NavGraph(
                 recordId = if (recordId > 0) recordId else null,
                 folderId = if (folderId > 0) folderId else null,
                 onBack = { navController.popBackStack() },
-                onSaved = { navController.popBackStack() }
+                onSaved = { navController.popBackStack() },
+                onOpenSpaceFile = { fileId ->
+                    navController.navigate(Screen.SpaceFileViewer.createRoute(fileId))
+                }
             )
         }
 
@@ -108,7 +112,10 @@ fun NavGraph(
             val imageId = backStackEntry.arguments?.getLong(Screen.ImagePreview.ARG_IMAGE_ID) ?: 0L
             ImagePreview(
                 imageId = imageId,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onOpenRecord = { recordId ->
+                    navController.navigate(Screen.RecordDetail.createRoute(recordId))
+                }
             )
         }
 
@@ -121,7 +128,10 @@ fun NavGraph(
             val videoId = backStackEntry.arguments?.getLong(Screen.VideoPlayer.ARG_VIDEO_ID) ?: 0L
             VideoPlayer(
                 videoId = videoId,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onOpenRecord = { recordId ->
+                    navController.navigate(Screen.RecordDetail.createRoute(recordId))
+                }
             )
         }
 
@@ -135,6 +145,22 @@ fun NavGraph(
             SpaceLinkWebView(
                 spaceLinkId = spaceLinkId,
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.SpaceFileViewer.route,
+            arguments = listOf(
+                navArgument(Screen.SpaceFileViewer.ARG_SPACE_FILE_ID) { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val spaceFileId = backStackEntry.arguments?.getLong(Screen.SpaceFileViewer.ARG_SPACE_FILE_ID) ?: 0L
+            SpaceFileViewer(
+                spaceFileId = spaceFileId,
+                onBack = { navController.popBackStack() },
+                onOpenRecord = { recordId ->
+                    navController.navigate(Screen.RecordDetail.createRoute(recordId))
+                }
             )
         }
 

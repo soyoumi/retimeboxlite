@@ -9,10 +9,12 @@ import com.retimebox.lite.data.local.converter.Converters
 import com.retimebox.lite.data.local.dao.FolderDao
 import com.retimebox.lite.data.local.dao.MediaItemDao
 import com.retimebox.lite.data.local.dao.RecordDao
+import com.retimebox.lite.data.local.dao.SpaceFileItemDao
 import com.retimebox.lite.data.local.dao.SpaceLinkItemDao
 import com.retimebox.lite.data.local.entity.Folder
 import com.retimebox.lite.data.local.entity.MediaItem
 import com.retimebox.lite.data.local.entity.Record
+import com.retimebox.lite.data.local.entity.SpaceFileItem
 import com.retimebox.lite.data.local.entity.SpaceLinkItem
 import com.retimebox.lite.util.FileHelper
 import java.io.File
@@ -22,9 +24,10 @@ import java.io.File
         Folder::class,
         Record::class,
         MediaItem::class,
-        SpaceLinkItem::class
+        SpaceLinkItem::class,
+        SpaceFileItem::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -34,6 +37,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun recordDao(): RecordDao
     abstract fun mediaItemDao(): MediaItemDao
     abstract fun spaceLinkItemDao(): SpaceLinkItemDao
+    abstract fun spaceFileItemDao(): SpaceFileItemDao
 
     companion object {
         @Volatile

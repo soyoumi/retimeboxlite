@@ -3,6 +3,7 @@ package com.retimebox.lite.util
 import android.content.Context
 import android.net.Uri
 import com.retimebox.lite.data.local.entity.MediaType
+import com.retimebox.lite.data.local.entity.SpaceFileItem
 import com.retimebox.lite.data.local.entity.SpaceType
 import java.io.File
 import java.text.SimpleDateFormat
@@ -20,6 +21,9 @@ object FileHelper {
     private const val DB_DIR = "db"
     private const val THUMBNAIL_DIR = "thumbnails"
     private const val EXTERNAL_ROOT = "retimeboxlitefiles"
+    private const val PANOIMG_DIR = "panoimg"
+    private const val PANOVIDEO_DIR = "panovideo"
+    private const val GSPLAT_DIR = "gsplat"
 
     private val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault())
 
@@ -218,7 +222,7 @@ object FileHelper {
     /**
      * 构建相对路径（含年份，供数据库存储）
      */
-    private fun getRelativePath(mediaType: MediaType, fileName: String): String {
+    fun getRelativePath(mediaType: MediaType, fileName: String): String {
         val subDir = when (mediaType) {
             MediaType.VOICE -> VOICE_DIR
             MediaType.IMAGE -> IMAGE_DIR
@@ -395,6 +399,115 @@ object FileHelper {
             }
         } catch (e: Exception) {
             android.util.Log.e("FileHelper", "deleteSpaceLinkTxt failed", e)
+        }
+    }
+
+    fun getPanoimgDir(context: Context): File {
+        val dir = File(getExternalRootDir(context), PANOIMG_DIR)
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
+    fun getPanovideoDir(context: Context): File {
+        val dir = File(getExternalRootDir(context), PANOVIDEO_DIR)
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
+    fun getGsplatDir(context: Context): File {
+        val dir = File(getExternalRootDir(context), GSPLAT_DIR)
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
+    fun getSpaceFileDir(context: Context, spaceType: SpaceType): File {
+        return when (spaceType) {
+            SpaceType.PANORAMA_IMAGE -> getPanoimgDir(context)
+            SpaceType.PANORAMA_VIDEO -> getPanovideoDir(context)
+            SpaceType.GSPLAT -> getGsplatDir(context)
+        }
+    }
+
+    suspend fun copySpaceFileToDir(context: Context, uri: Uri, spaceType: SpaceType): String? {
+        return try {
+            val dir = getSpaceFileDir(context, spaceType)
+            val originalExt = uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase()
+            val extension = when (spaceType) {
+                SpaceType.PANORAMA_IMAGE -> if (originalExt == "png" || originalExt == "jpg" || originalExt == "jpeg") originalExt else "jpg"
+                SpaceType.PANORAMA_VIDEO -> if (originalExt == "mp4") originalExt else "mp4"
+                SpaceType.GSPLAT -> if (originalExt == "ply" || originalExt == "sog") originalExt else "ply"
+            }
+            val fileName = generateFileName(extension)
+            val destFile = File(dir, fileName)
+
+            val inputStream = context.contentResolver.openInputStream(uri)
+                ?: throw IllegalStateException("Cannot open input stream for URI: $uri")
+
+            inputStream.use { input ->
+                destFile.outputStream().use { output ->
+                    input.copyTo(output, bufferSize = 8192)
+                }
+            }
+
+            if (!destFile.exists() || destFile.length() == 0L) {
+                destFile.delete()
+                throw IllegalStateException("Failed to copy space file or file is empty")
+            }
+
+            "${getSpaceFileRelativeDir(spaceType)}/$fileName"
+        } catch (e: Exception) {
+            android.util.Log.e("FileHelper", "copySpaceFileToDir failed", e)
+            null
+        }
+    }
+
+    private fun getSpaceFileRelativeDir(spaceType: SpaceType): String {
+        return when (spaceType) {
+            SpaceType.PANORAMA_IMAGE -> PANOIMG_DIR
+            SpaceType.PANORAMA_VIDEO -> PANOVIDEO_DIR
+            SpaceType.GSPLAT -> GSPLAT_DIR
+        }
+    }
+
+    fun getSpaceFileAbsolutePath(context: Context, relativePath: String): String {
+        val file = getFileFromRelativePath(context, relativePath)
+        return file.absolutePath
+    }
+
+    /**
+     * 保存空间文件 MD 信息到 spfile/{year}/{id}.md
+     * 文件内容每行：类型标签、名称、文件路径、缩略图路径
+     */
+    fun saveSpaceFileMd(context: Context, item: SpaceFileItem) {
+        try {
+            val year = yearFromDate(item.createTime)
+            val dir = File(getExternalRootDir(context), "spfile/$year")
+            if (!dir.exists()) dir.mkdirs()
+            val mdFile = File(dir, "${item.id}.md")
+
+            val typeLabel = when (item.spaceType) {
+                SpaceType.PANORAMA_IMAGE -> "全景图片"
+                SpaceType.PANORAMA_VIDEO -> "全景视频"
+                SpaceType.GSPLAT -> "高斯泼溅"
+            }
+            mdFile.writeText("$typeLabel\n${item.name}\n${item.filePath}\n${item.thumbnailUrl ?: ""}")
+        } catch (e: Exception) {
+            android.util.Log.e("FileHelper", "saveSpaceFileMd failed", e)
+        }
+    }
+
+    /**
+     * 删除空间文件 MD 信息文件 spfile/{year}/{id}.md
+     */
+    fun deleteSpaceFileMd(context: Context, id: Long, createTime: Long) {
+        try {
+            val year = yearFromDate(createTime)
+            val mdFile = File(getExternalRootDir(context), "spfile/$year/$id.md")
+            if (mdFile.exists()) {
+                mdFile.delete()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("FileHelper", "deleteSpaceFileMd failed", e)
         }
     }
 }

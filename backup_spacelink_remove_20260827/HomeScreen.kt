@@ -41,6 +41,7 @@ fun HomeScreen(
     onOpenRecordEditor: (Long?, Long?) -> Unit,
     onOpenImage: (Long) -> Unit = {},
     onOpenVideo: (Long) -> Unit = {},
+    onOpenSpaceLink: (Long) -> Unit = {},
     onOpenSpaceFile: (Long) -> Unit = {},
     onOpenFolderManager: () -> Unit = {}
 ) {
@@ -110,6 +111,7 @@ fun HomeScreen(
             }
             composable(BottomNavItem.Space.route) {
                 SpaceScreen(
+                    onOpenSpaceLink = onOpenSpaceLink,
                     onOpenSpaceFile = onOpenSpaceFile
                 )
             }
